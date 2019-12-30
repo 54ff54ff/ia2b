@@ -1,0 +1,139 @@
+CSRCS  = $(wildcard *.cpp)
+CHDRS  = $(wildcard *.h)
+COBJS  = $(patsubst %.cpp,  %.o, $(CSRCS))
+DEPEND = $(patsubst %.cpp, .%.d, $(CSRCS))
+
+COBJS_D = $(addsuffix d, $(COBJS))
+
+.PHONY: target debug cleanall cleandebug
+
+ifneq ($(PKG), )
+#other source directory
+#====================================#
+LIBNAME  = $(PKG).a
+TARGET   = $(LIBNAME)
+TARGET_P = $(LIBNAME)
+
+TARGET_D   = $(TARGET)d
+TARGET_P_D = $(TARGET_P)d
+
+$(TARGET)  : $(COBJS)
+$(TARGET_D): $(COBJS_D)
+$(TARGET) $(TARGET_D):
+	@echo ">>> Building $@..."
+	@$(AR) $@ $^
+#====================================#
+endif
+
+ifneq ($(EXEC), )
+#main directory
+#====================================#
+BINDIR   = ../..
+TARGET   = $(BINDIR)/$(EXEC)
+TARGET_P = $(EXEC)
+LINKFS   = -lstdc++fs
+
+LIBPKGS_T1 = $(patsubst %, /%.a, $(SRC))
+LIBPKGS_T2 = $(join $(SRC), $(LIBPKGS_T1))
+LIBPKGS    = $(patsubst %, ../%, $(LIBPKGS_T2))
+
+TARGET_D   = $(TARGET)_debug
+TARGET_P_D = $(TARGET_P)_debug
+
+LIBPKGS_D  = $(addsuffix d, $(LIBPKGS))
+
+$(TARGET)  : $(COBJS)   $(LIBPKGS)
+$(TARGET)  : TO_PRINT = $(TARGET_P)
+$(TARGET_D): $(COBJS_D) $(LIBPKGS_D)
+$(TARGET_D): TO_PRINT = $(TARGET_P_D)
+$(TARGET) $(TARGET_D):
+	@echo ">>> Building $(TO_PRINT)..."
+	@$(CXX) $(CXXFLAGS) -o $@ -Wl,--start-group -Wl,-whole-archive $^ -Wl,-no-whole-archive $(LINKFS) -Wl,--end-group
+#====================================#
+endif
+
+ifeq ($(FLAG), BUILD)
+#make (all)
+#====================================#
+INCDIR    = $(addprefix ../, $(HDR))
+INCDEPEND = -I. $(addprefix -I, $(INCDIR))
+
+CXX      = g++
+AR       = ar cr
+CXXVER   = -std=c++17
+CXXWARN  = -Wall -Wextra
+CXXFLAGS = $(CXXWARN) $(CXXVER)
+#CXXFLAGS += -DNDEBUG
+
+target: CXXFLAGS += -O3 -s
+target: $(TARGET)
+	@echo -n
+
+debug: CXXFLAGS += -g3 -pg
+debug: $(TARGET_D)
+	@echo -n
+
+%.o %.od: %.cpp .%.d
+	@echo ">> Compiling $<..."
+	@$(CXX) $(CXXFLAGS) $(INCDEPEND) -c $< -o $@
+.%.d: %.cpp
+	@echo "> Updating $@..."
+	@g++ $(CXXVER) $(INCDEPEND) -MM -MT $@ -MF $@ $<
+
+-include $(DEPEND)
+#====================================#
+else
+ifeq ($(FLAG), CLEAN)
+#make clean
+#====================================#
+cleanall: clean cleandebug
+
+clean:
+#	dependency files
+	@for depend in $(DEPEND); \
+	do \
+		if [ -f $$depend ]; \
+		then \
+			echo "> Removing $$depend..."; \
+			rm -f $$depend; \
+		fi; \
+	done
+#	object files
+	@for obj in $(COBJS); \
+	do \
+		if [ -f $$obj ]; \
+		then \
+			echo ">> Removing $$obj..."; \
+			rm -f $$obj; \
+		fi; \
+	done;
+#	library or executable
+	@if [ -f $(TARGET) ]; \
+	then \
+		echo ">>> Removing $(TARGET_P)..."; \
+		rm -f $(TARGET); \
+	fi
+
+cleandebug:
+#	object files for debugging
+	@for obj in $(COBJS_D); \
+	do \
+		if [ -f $$obj ]; \
+		then \
+			echo ">> Removing $$obj..."; \
+			rm -f $$obj; \
+		fi; \
+	done;
+#	library or executable for debugging
+	@if [ -f $(TARGET_D) ]; \
+	then \
+		echo ">>> Removing $(TARGET_P_D)..."; \
+		rm -f $(TARGET_D); \
+	fi
+#====================================#
+else
+#====================================#
+$(error unknown flag!)
+#====================================#
+endif
+endif
