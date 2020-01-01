@@ -9,6 +9,9 @@
 namespace _54ff
 {
 
+const Lit lit_Undef = -2;
+const Lit lit_Error = -1;
+
 const lbool l_True  = { 0 };
 const lbool l_False = { 1 };
 const lbool l_Undef = { 2 };

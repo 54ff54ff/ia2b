@@ -334,7 +334,7 @@ ItpCheckCmd::getHelpStr()const
 	                 [-Push | -NOPush] [-Queue]
 	                 [-APPROXGen | -NOGen]
 	                 [-EAger] [-INFinite]
-	                 [-Stat ("atsgpr")] [-Verbose]
+	                 [-Stat ("atsgprc")] [-Verbose]
 --------------------------------------------------------------------------
 	0:  -TRace,     3
 	1:  -Max,       2
@@ -485,6 +485,7 @@ PdrCheckCmd::exec(char* options)const
 					case 'g' : pstt = PDR_STAT_GENERALIZE; break;
 					case 'p' : pstt = PDR_STAT_PROPAGATE;  break;
 					case 'r' : pstt = PDR_STAT_RECYCLE;    break;
+					case 'c' : pstt = PDR_STAT_CUBE;       break;
 					default  : pstt = PDR_STAT_ERROR;      break;
 				}
 				switch(pstt)
@@ -584,7 +585,7 @@ PdrCheckCmd::getUsageStr()const
 	       "[-Push | -NOPush] [-Queue]\n"
 	       "[-APPROXGen | -NOGen]\n"
 	       "[-EAger] [-INFinite]\n"
-	       "[-Stat (\"atsgpr\")] [-Verbose]\n";
+	       "[-Stat (\"atsgprc\")] [-Verbose]\n";
 }
 
 const char*

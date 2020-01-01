@@ -33,6 +33,8 @@ private:
 	int  v;
 };
 
+extern const Lit lit_Undef, lit_Error;
+
 class lbool
 {
 public:

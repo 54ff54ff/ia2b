@@ -19,7 +19,8 @@ const string pdrStatStr[PDR_STAT_TOTAL] =
 	"SAT Query",
 	"UNSAT Generalization",
 	"Cube Propagation",
-	"Solver Recycling"
+	"Solver Recycling",
+	"Cube Subsumption"
 };
 
 void
@@ -55,9 +56,13 @@ PdrSatStat::printStat()const
 		     << "  SAT runtime     = " << getTotalTime(1)                   << " s" << endl
 		     << "UNSAT number      = " << getNum(0)                                 << endl
 		     << "UNSAT runtime     = " << getTotalTime(0)                   << " s" << endl
-		     << "Total number      = " << getNum(1) + getNum(0)                     << endl
-		     << "Total runtime     = " << getTotalTime(1) + getTotalTime(0) << " s" << endl
-		     << "Last solving time = " << getTotalTime(2)                   << " s" << endl
+		     << "Abort number      = " << getNum(2)                                 << endl
+		     << "Abort runtime     = " << getTotalTime(2)                   << " s" << endl
+		     << "Total number      = " << getNum(1) + getNum(0) + getNum(2)         << endl
+		     << "Total runtime     = " << getTotalTime(1) +
+		                                  getTotalTime(0) +
+		                                  getTotalTime(2)                   << " s" << endl
+		     << "Last solving time = " << getTotalTime(3)                   << " s" << endl
 		     << setprecision(ss)
 		     << "Min   SAT decision = " << minSAT_D   << endl
 		     << "Max UNSAT decision = " << maxUNSAT_D << endl;
@@ -116,6 +121,17 @@ PdrRecycleStat::printStat()const
 		     << "Runtime on solver recycling = " << getTotalTime() << " s" << endl
 		     << setprecision(ss);
 	}
+}
+
+void
+PdrCubeStat::printStat()const
+{
+	cout << RepeatChar('=', 72) << endl
+	     << "     Subsumption when adding proof obligation   = " << getNum(0) << endl
+	     << "Self Subsumption when adding proof obligation   = " << getNum(1) << endl
+	     << "     Subsumption when blocking proof obligation = " << getNum(2) << endl
+	     << "     Subsumption when adding blocked cube       = " << getNum(3) << endl
+	     << "Self subsumption when adding blocked cube       = " << getNum(4) << endl;
 }
 
 ostream& operator<<(ostream& os, const PdrCube& c)
@@ -190,6 +206,7 @@ PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t
 , maxFrame       (maxF)
 , unusedVarNum   (0)
 , recycleVarNum  (recycleVN)
+, maxUNSAT_D     (0)
 , solver         (ntk)
 , terSimSup      (ntk)
 , actInc         (1.0)
@@ -199,6 +216,7 @@ PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t
 , unsatGenStat   (stat[PDR_STAT_GENERALIZE])
 , propStat       (stat[PDR_STAT_PROPAGATE])
 , recycleStat    (stat[PDR_STAT_RECYCLE])
+, cubeStat       (stat[PDR_STAT_CUBE])
 
 , simType        (simT)
 , ordType        (ordT)
@@ -352,6 +370,8 @@ PdrChecker::~PdrChecker()
 		propStat->printStat();
 	if(recycleStat.isON())
 		recycleStat->printStat();
+	if(cubeStat.isON())
+		cubeStat->printStat();
 
 	#ifdef UsePatternCheckSAT
 	cout << RepeatChar('=', 36) << endl
@@ -480,6 +500,8 @@ PdrChecker::isBlocked(const PdrTCube& badTCube)const
 				goto DONE;
 DONE:
 	assert(f <= maxF);
+	if(f != maxF && cubeStat.isON())
+		cubeStat->incSubsumeBlockObl();
 	switch(maxF - f)
 	{
 		case 0 : return isBlockedSAT(badTCube);
@@ -790,6 +812,8 @@ PdrChecker::addBlockedCube(const PdrTCube& blockTCube, size_t initF)
 					frame[f][s++] = move(frame[f][i]);
 				else { assert(s == i); s += 1; }
 			}
+			else if(cubeStat.isON())
+				cubeStat->incSubsumeBlockCube();
 		frame[f].resize(s);
 	}
 
@@ -996,6 +1020,9 @@ PdrChecker::addState(const PdrCube& c, size_t level)const
 void
 PdrChecker::activateFrame(size_t f)const
 {
+	if(f < frame.size() - 1)
+		for(size_t ff = 0; ff < f; ++ff)
+			solver->addAssump(actVar[ff], true);
 	for(size_t maxF = actVar.size(); f < maxF; ++f)
 		solver->addAssump(actVar[f], false);
 }
@@ -1114,43 +1141,43 @@ PdrChecker::satSolve()const
 		satStat->startTime();
 	bool isSAT = solver->solve();
 	if(satStat.isON())
-		satStat->countOne(isSAT),
+		satStat->countOne  (isSAT),
 		satStat->finishTime(isSAT),
 		satStat->setLastTime();
 	d = solver->getDecisionNum() - d;
 	if(satStat.isON())
 		isSAT ? satStat->setSD(d) : satStat->setUD(d);
+	if(!isSAT) checkMaxD(d);
 	#ifdef UsePatternCheckSAT
 	assert(!simResult || isSAT);
 	if(isSAT) collectPattern();
 	#endif
 	return isSAT;
-
-
-	if(satStat.isON())
-	{
-		size_t d = solver->getDecisionNum();
-		satStat->startTime();
-		bool isSAT = solver->solve();
-		satStat->countOne(isSAT);
-		satStat->finishTime(isSAT);
-		satStat->setLastTime();
-		d = solver->getDecisionNum() - d;
-		isSAT ? satStat->setSD(d) : satStat->setUD(d);
-		#ifdef UsePatternCheckSAT
-		assert(!simResult || isSAT);
-		if(isSAT) collectPattern();
-		#endif
-		return isSAT;
-	}
-	else return solver->solve();
 }
 
 bool
 PdrChecker::satSolveLimited()const
 {
+	size_t d = solver->getDecisionNum();
+	if(satStat.isON())
+		satStat->startTime();
 	solver->setDeciLimit(200);
-	return solver->solveLimited() != l_False;
+	lbool result = solver->solveLimited();
+	if(satStat.isON())
+	{
+		satStat->countOne  (result == l_Undef ? 2 : (result == l_True ? 1 : 0));
+		satStat->finishTime(result == l_Undef ? 2 : (result == l_True ? 1 : 0));
+		if(result != l_Undef) satStat->setLastTime();
+	}
+	d = solver->getDecisionNum() - d;
+	if(satStat.isON() && result != l_Undef)
+		result == l_True ? satStat->setSD(d) : satStat->setUD(d);
+	if(result == l_False) checkMaxD(d);
+	#ifdef UsePatternCheckSAT
+	assert(!simResult || result != l_False);
+	if(result == l_True) collectPattern();
+	#endif
+	return result != l_False;
 }
 
 void

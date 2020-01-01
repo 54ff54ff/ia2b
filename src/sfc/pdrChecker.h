@@ -69,6 +69,7 @@ enum PdrStatType
 	PDR_STAT_GENERALIZE,
 	PDR_STAT_PROPAGATE,
 	PDR_STAT_RECYCLE,
+	PDR_STAT_CUBE,
 	PDR_STAT_TOTAL,
 	PDR_STAT_ERROR,
 	PDR_STAT_ALL
@@ -85,12 +86,12 @@ public:
 	void printStat()const;
 };
 
-class PdrSatStat : public Stat<2, 3>
+class PdrSatStat : public Stat<3, 4>
 {
 public:
-	PdrSatStat(): Stat<2, 3>(), minSAT_D(-1), maxUNSAT_D(0) {}
+	PdrSatStat(): Stat<3, 4>(), minSAT_D(-1), maxUNSAT_D(0) {}
 
-	void setLastTime() { setTime(2); }
+	void setLastTime() { setTime(3); }
 
 	void printStat()const;
 
@@ -115,7 +116,7 @@ public:
 class PdrPropStat : public Stat<3, 1>
 {
 public:
-	void incInfCubeCount() { countN(1); }
+	void incInfCubeCount() { countOne(1); }
 	void incInfLitCount(size_t n) { countN(2, n); }
 
 	void printStat()const;
@@ -126,6 +127,18 @@ class PdrRecycleStat : public Stat<2, 1>
 public:
 	void checkMaxRecNum(size_t n)
 		{ if(n > getNum(1)) setNum(1, n); }
+
+	void printStat()const;
+};
+
+class PdrCubeStat : public Stat<5, 0>
+{
+public:
+	void incSubsumeAddObl()        { countOne(0); }
+	void incSelfSubsumeAddObl()    { countOne(1); }
+	void incSubsumeBlockObl()      { countOne(2); }
+	void incSubsumeBlockCube()     { countOne(3); }
+	void incSelfSubsumeBlockCube() { countOne(4); }
 
 	void printStat()const;
 };
@@ -179,7 +192,7 @@ public:
 	bool isNone()const { return uint32Ptr == 0; }
 	void* getOriPtr()const { return uint64Ptr - 4; }
 
-	bool subsume(const PdrCube& c)const { return subsumeComplex(c); }
+	bool subsume(const PdrCube& c)const { return subsumeTrivial(c); }
 	bool subsumeTrivial(const PdrCube&)const;
 	bool subsumeComplex(const PdrCube&)const;
 
@@ -268,6 +281,7 @@ protected:
 	void addInitState();
 
 	void refineInf();
+	void checkMaxD(size_t d)const { if(d > maxUNSAT_D) maxUNSAT_D = d; }
 
 protected:
 	size_t  curFrame;
@@ -275,6 +289,8 @@ protected:
 
 	mutable size_t  unusedVarNum;
 	const size_t    recycleVarNum;
+
+	mutable size_t maxUNSAT_D;
 
 	vector<vector<PdrCube>>  frame;
 	SolverPtr<CirSolver>     solver;
@@ -292,6 +308,7 @@ protected:
 	StatPtr<PdrUnsatGenStat>  unsatGenStat;
 	StatPtr<PdrPropStat>      propStat;
 	StatPtr<PdrRecycleStat>   recycleStat;
+	StatPtr<PdrCubeStat>      cubeStat;
 
 	PdrSimType  simType;
 	PdrOrdType  ordType;
