@@ -27,7 +27,7 @@ CmdClass(ItpCheck, CMD_TYPE_VERIFICATION, 5, "-TRace",   3,
                                              "-All",     2,
                                              "-Last",    2,
                                              "-TImeout", 3);
-CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 20, "-TRace",     3,
+CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 21, "-TRace",     3,
                                               "-Max",       2,
                                               "-EVent",     3,
                                               "-Backward",  2,
@@ -38,7 +38,7 @@ CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 20, "-TRace",     3,
                                               "-REVerse",   4,
                                               "-Queue",     2,
                                               "-EAger",     3,
-                                              "-Stat",      2,
+                                              "-STat",      3,
                                               "-TImeout",   3,
                                               "-NOPush",    4,
                                               "-Verbose",   2,
@@ -46,7 +46,8 @@ CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 20, "-TRace",     3,
                                               "-NOGen",     4,
                                               "-APPROXGen", 8,
                                               "-INFinite",  4,
-                                              "-NEed",      3);
+                                              "-NEed",      3,
+                                              "-SElf",      3);
 CmdClass(PbcCheck, CMD_TYPE_VERIFICATION, 9, "-TRace",     3,
                                              "-Max",       2,
                                              "-Stat",      2,
@@ -330,11 +331,11 @@ ItpCheckCmd::getHelpStr()const
 	                 [-Max (unsigned maxFrame)]
 	                 [-RECycle (unsigned recycleVarNum)]
 	                 [-EVent | -Backward | -INTernal] [-NEed]
-	                 [<-ACtivity | -Decay> [-REVerse]]
+	                 [<-ACtivity | -Decay> [-REVerse]] [-SElf]
 	                 [-Push | -NOPush] [-Queue]
 	                 [-APPROXGen | -NOGen]
 	                 [-EAger] [-INFinite]
-	                 [-Stat ("atsgprc")] [-Verbose]
+	                 [-STat ("atsgprc")] [-Verbose]
 --------------------------------------------------------------------------
 	0:  -TRace,     3
 	1:  -Max,       2
@@ -347,7 +348,7 @@ ItpCheckCmd::getHelpStr()const
 	8:  -REVerse,   4
 	9:  -Queue,     2
 	10: -EAger,     3
-	11: -Stat,      2
+	11: -STat,      3
 	12: -TImeout,   3
 	13: -NOPush,    4
 	14: -Verbose,   2
@@ -356,6 +357,7 @@ ItpCheckCmd::getHelpStr()const
 	17: -APPROXGen, 8
 	18: -INFinite,  4
 	19: -NEed,      2
+	20: -SElf,      3
 ========================================================================*/
 
 CmdExecStatus
@@ -386,6 +388,7 @@ PdrCheckCmd::exec(char* options)const
 	PdrGenType pgt  = PDR_GEN_NORMAL;
 	bool rInf    = false;
 	bool cInNeed = false;
+	bool cSelf   = false;
 
 	bool statON = false;
 	Array<bool> stat(PDR_STAT_TOTAL);
@@ -565,10 +568,16 @@ PdrCheckCmd::exec(char* options)const
 				return errorOption(CMD_OPT_EXTRA, tokens[i]);
 			cInNeed = true;
 		}
+		else if(optMatch<20>(tokens[i]))
+		{
+			if(cSelf)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			cSelf = true;
+		}
 		else return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
 	if(!checkNtk()) return CMD_EXEC_ERROR_INT;
 	SafetyChecker* checker = getChecker<PdrChecker>(aigNtk, outputIdx, trace, timeout, maxFrame, recycleVarNum, stat,
-	                                                pst, port, pobt, pdt, ppt, pgt, rInf, cInNeed, verbose);
+	                                                pst, port, pobt, pdt, ppt, pgt, rInf, cInNeed, cSelf, verbose);
 	if(checker == 0) return CMD_EXEC_ERROR_INT;
 	checker->Check(); delete checker; return CMD_EXEC_DONE;
 }
@@ -581,11 +590,11 @@ PdrCheckCmd::getUsageStr()const
            "[-Max (unsigned maxFrame)]\n"
 	       "[-RECycle (unsigned recycleVarNum)]\n"
            "[-EVent | -Backward | -INTernal] [-NEed]\n"
-	       "[<-ACtivity | -Decay> [-REVerse]]\n"
+	       "[<-ACtivity | -Decay> [-REVerse]] [-SElf]\n"
 	       "[-Push | -NOPush] [-Queue]\n"
 	       "[-APPROXGen | -NOGen]\n"
 	       "[-EAger] [-INFinite]\n"
-	       "[-Stat (\"atsgprc\")] [-Verbose]\n";
+	       "[-STat (\"atsgprc\")] [-Verbose]\n";
 }
 
 const char*

@@ -89,7 +89,11 @@ public:
 class PdrSatStat : public Stat<3, 4>
 {
 public:
-	PdrSatStat(): Stat<3, 4>(), minSAT_D(-1), maxUNSAT_D(0) {}
+	PdrSatStat()
+	: Stat<3, 4> ()
+	, minSAT_D   (-1)
+	, maxUNSAT_D (0)
+	, maxAbort_D (0) {}
 
 	void setLastTime() { setTime(3); }
 
@@ -97,9 +101,10 @@ public:
 
 	void setSD(size_t d) { if(d < minSAT_D)   minSAT_D   = d; }
 	void setUD(size_t d) { if(d > maxUNSAT_D) maxUNSAT_D = d; }
+	void setAD(size_t d) { if(d > maxAbort_D) maxAbort_D = d; }
 
 protected:
-	size_t minSAT_D, maxUNSAT_D;
+	size_t minSAT_D, maxUNSAT_D, maxAbort_D;
 };
 
 class PdrUnsatGenStat : public Stat<2, 2>
@@ -192,9 +197,9 @@ public:
 	bool isNone()const { return uint32Ptr == 0; }
 	void* getOriPtr()const { return uint64Ptr - 4; }
 
-	bool subsume(const PdrCube& c)const { return subsumeTrivial(c); }
-	bool subsumeTrivial(const PdrCube&)const;
-	bool subsumeComplex(const PdrCube&)const;
+	AigGateLit subsume(const PdrCube& c)const { return subsumeTrivial(c); }
+	AigGateLit subsumeTrivial(const PdrCube&)const;
+	AigGateLit subsumeComplex(const PdrCube&)const;
 
 private:
 	union { unsigned* uint32Ptr; size_t* uint64Ptr; PdrCube* cubePtr; };
@@ -221,7 +226,8 @@ class PdrChecker : public SafetyBChecker
 {
 public:
 	PdrChecker(AigNtk*, size_t, bool, size_t, size_t, size_t, const Array<bool>&,
-	           PdrSimType, PdrOrdType, PdrOblType, PdrDeqType, PdrPrpType, PdrGenType, bool, bool, bool);
+	           PdrSimType, PdrOrdType, PdrOblType, PdrDeqType, PdrPrpType, PdrGenType,
+	           bool, bool, bool, bool);
 	~PdrChecker();
 
 protected:
@@ -282,6 +288,7 @@ protected:
 
 	void refineInf();
 	void checkMaxD(size_t d)const { if(d > maxUNSAT_D) maxUNSAT_D = d; }
+	void checkThenPushObl(size_t, const PdrCube&);
 
 protected:
 	size_t  curFrame;
@@ -318,6 +325,7 @@ protected:
 	PdrGenType  genType;
 	bool        toRefineInf;
 	bool        convertInNeed;
+	bool        checkSelf;
 
 	bool  verbose;
 

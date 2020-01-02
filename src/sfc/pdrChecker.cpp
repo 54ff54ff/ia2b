@@ -65,7 +65,8 @@ PdrSatStat::printStat()const
 		     << "Last solving time = " << getTotalTime(3)                   << " s" << endl
 		     << setprecision(ss)
 		     << "Min   SAT decision = " << minSAT_D   << endl
-		     << "Max UNSAT decision = " << maxUNSAT_D << endl;
+		     << "Max UNSAT decision = " << maxUNSAT_D << endl
+		     << "Max Abort decision = " << maxAbort_D << endl;
 	}
 }
 
@@ -165,21 +166,25 @@ PdrCube::PdrCube(const vector<unsigned>& litList, bool toSort)
 	incCount();
 }
 
-bool
+AigGateLit
 PdrCube::subsumeTrivial(const PdrCube& c)const
 {
+	AigGateLit ret = UNDEF_GATELIT;
 	for(size_t i = 0; i < getSize(); ++i)
 	{
 		bool match = false;
 		for(size_t j = 0; j < c.getSize(); ++j)
 			if(getLit(i) == c.getLit(j))
 				{ match = true; break; }
-		if(!match) return false;
+			else if(getGateID(getLit(i)) == getGateID(c.getLit(j)) &&
+			        ret == UNDEF_GATELIT)
+				{ ret = c.getLit(i); match = true; break; }
+		if(!match) return ERROR_GATELIT;
 	}
-	return true;
+	return ret;
 }
 
-bool
+AigGateLit
 PdrCube::subsumeComplex(const PdrCube& c)const
 {
 	if(getSize() > c.getSize() ||
@@ -191,16 +196,16 @@ PdrCube::subsumeComplex(const PdrCube& c)const
 			if(getLit(i) == c.getLit(j))
 				goto OK;
 			else if(getGateID(getLit(i)) <= getGateID(c.getLit(j)))
-				return false;
-		return false;
+				return ERROR_GATELIT;
+		return ERROR_GATELIT;
 		OK: {}
 	}
-	return true;
+	return UNDEF_GATELIT;
 }
 
 PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t timeout, size_t maxF, size_t recycleVN, const Array<bool>& stat,
                        PdrSimType simT, PdrOrdType ordT, PdrOblType oblT, PdrDeqType deqT, PdrPrpType prpT, PdrGenType genT,
-                       bool rInf, bool cInNeed, bool _verbose)
+                       bool rInf, bool cInNeed, bool cSelf, bool _verbose)
 : SafetyBChecker (ntkToCheck, outputIdx, _trace, timeout)
 , curFrame       (0)
 , maxFrame       (maxF)
@@ -226,6 +231,7 @@ PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t
 , genType        (genT)
 , toRefineInf    (rInf)
 , convertInNeed  (cInNeed)
+, checkSelf      (cSelf)
 
 , verbose        (_verbose)
 {
@@ -287,6 +293,8 @@ PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t
 		cout << "             Try to further refine timeframe Inf" << endl;
 	if(convertInNeed)
 		cout << "             Convert CNF formula of latch only if needed" << endl;
+	if(checkSelf)
+		cout << "             Check self subsumption on cubes as well" << endl;
 	size_t numStatActive = 0;
 	for(unsigned i = 0; i < PDR_STAT_TOTAL; ++i)
 		if(stat[i])
@@ -470,17 +478,20 @@ PdrChecker::recBlockCube(const PdrTCube& notPTCube)
 				if(oblType != PDR_OBL_IGNORE)
 					if(newTCube.getFrame() != FRAME_INF)
 						if(newTCube.getFrame() < curFrame || oblType == PDR_OBL_PUSH)
-							badDequeVec[newTCube.getFrame()+1].push_back(badCube);
+							checkThenPushObl(newTCube.getFrame()+1, badCube);
+//							badDequeVec[newTCube.getFrame()+1].push_back(badCube);
 				checkEmpty();
 			}
 			else //SAT, not blocked
-				badDequeVec[--checkFrame].push_back(newTCube.getCube());
+				checkThenPushObl(--checkFrame, newTCube.getCube());
+//				badDequeVec[--checkFrame].push_back(newTCube.getCube());
 			checkRecycle();
 		}
 		else
 		{
 			if(oblType == PDR_OBL_PUSH && blockFrame != FRAME_INF)
-				badDequeVec[blockFrame+1].push_back(badCube);
+				checkThenPushObl(blockFrame+1, badCube);
+//				badDequeVec[blockFrame+1].push_back(badCube);
 			checkEmpty();
 		}
 		CheckBreakPdr(true);
@@ -496,7 +507,7 @@ PdrChecker::isBlocked(const PdrTCube& badTCube)const
 	assert(f <= curFrame);
 	for(; f < maxF; ++f)
 		for(const PdrCube& frameCube: frame[f])
-			if(frameCube.subsume(badTCube.getCube()))
+			if(frameCube.subsume(badTCube.getCube()) == UNDEF_GATELIT)
 				goto DONE;
 DONE:
 	assert(f <= maxF);
@@ -806,7 +817,7 @@ PdrChecker::addBlockedCube(const PdrTCube& blockTCube, size_t initF)
 	{
 		size_t s = 0;
 		for(size_t i = 0, n = frame[f].size(); i < n; ++i)
-			if(!blockCube.subsume(frame[f][i]))
+			if(blockCube.subsume(frame[f][i]) != UNDEF_GATELIT)
 			{
 				if(s < i)
 					frame[f][s++] = move(frame[f][i]);
@@ -1020,9 +1031,11 @@ PdrChecker::addState(const PdrCube& c, size_t level)const
 void
 PdrChecker::activateFrame(size_t f)const
 {
+/*
 	if(f < frame.size() - 1)
 		for(size_t ff = 0; ff < f; ++ff)
 			solver->addAssump(actVar[ff], true);
+*/
 	for(size_t maxF = actVar.size(); f < maxF; ++f)
 		solver->addAssump(actVar[f], false);
 }
@@ -1161,7 +1174,9 @@ PdrChecker::satSolveLimited()const
 	size_t d = solver->getDecisionNum();
 	if(satStat.isON())
 		satStat->startTime();
-	solver->setDeciLimit(200);
+	size_t dd = maxUNSAT_D / 5;
+	if(dd < 36) dd = 36;
+	solver->setDeciLimit(maxUNSAT_D + dd);
 	lbool result = solver->solveLimited();
 	if(satStat.isON())
 	{
@@ -1170,8 +1185,8 @@ PdrChecker::satSolveLimited()const
 		if(result != l_Undef) satStat->setLastTime();
 	}
 	d = solver->getDecisionNum() - d;
-	if(satStat.isON() && result != l_Undef)
-		result == l_True ? satStat->setSD(d) : satStat->setUD(d);
+	if(satStat.isON())
+		result == l_Undef ? satStat->setAD(d) : (result == l_True ? satStat->setSD(d) : satStat->setUD(d));
 	if(result == l_False) checkMaxD(d);
 	#ifdef UsePatternCheckSAT
 	assert(!simResult || result != l_False);
@@ -1281,6 +1296,27 @@ PdrChecker::refineInf()
 		}
 		checkRecycle();
 	}
+}
+
+void
+PdrChecker::checkThenPushObl(size_t f, const PdrCube& c)
+{
+	bool keep = true;
+	if(checkSelf)
+	{
+		size_t s = 0;
+		for(size_t i = 0, n = badDequeVec[f].size(); i < n; ++i)
+			if(c.subsume(badDequeVec[f][i]) == UNDEF_GATELIT)
+			{
+				if(s < i)
+					badDequeVec[f][s++] = move(badDequeVec[f][i]);
+				else { assert(s == i); s += 1; }
+			}
+			else if(badDequeVec[f][i].subsume(c) == UNDEF_GATELIT)
+				{ keep = false; assert(s == i); break; }
+	}
+	if(keep)
+		badDequeVec[f].push_back(c);
 }
 
 #ifdef UsePatternCheckSAT
