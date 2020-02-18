@@ -27,7 +27,7 @@ CmdClass(ItpCheck, CMD_TYPE_VERIFICATION, 5, "-TRace",   3,
                                              "-All",     2,
                                              "-Last",    2,
                                              "-TImeout", 3);
-CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 21, "-TRace",     3,
+CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 24, "-TRace",     3,
                                               "-Max",       2,
                                               "-EVent",     3,
                                               "-Backward",  2,
@@ -46,8 +46,11 @@ CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 21, "-TRace",     3,
                                               "-NOGen",     4,
                                               "-APPROXGen", 8,
                                               "-INFinite",  4,
-                                              "-NEed",      3,
-                                              "-SElf",      3);
+                                              "-NEEDCone",  6,
+                                              "-SElf",      3,
+                                              "-ASsert",    3,
+                                              "-Called",    2,
+                                              "-NEEDFrame", 6);
 CmdClass(PbcCheck, CMD_TYPE_VERIFICATION, 9, "-TRace",     3,
                                              "-Max",       2,
                                              "-Stat",      2,
@@ -329,13 +332,14 @@ ItpCheckCmd::getHelpStr()const
 	CHEck SAfety PDr <(unsigned outputIdx)> [-TRace]
 	                 [-TImeout (unsigned timeout)]
 	                 [-Max (unsigned maxFrame)]
-	                 [-RECycle (unsigned recycleVarNum)]
-	                 [-EVent | -Backward | -INTernal] [-NEed]
+	                 [<-RECycle (unsigned recycleNum)> [-Called]]
+	                 [-EVent | -Backward | -INTernal]
+	                 [-NEEDCone] [-NEEDFrame]
 	                 [<-ACtivity | -Decay> [-REVerse]] [-SElf]
 	                 [-Push | -NOPush] [-Queue]
 	                 [-APPROXGen | -NOGen]
-	                 [-EAger] [-INFinite]
-	                 [-STat ("atsgprc")] [-Verbose]
+	                 [-EAger] [-INFinite] [-ASsert]
+	                 [-STat ("atsgprc")] [-Verbose ("aogpbtcimf")]
 --------------------------------------------------------------------------
 	0:  -TRace,     3
 	1:  -Max,       2
@@ -356,8 +360,11 @@ ItpCheckCmd::getHelpStr()const
 	16: -NOGen,     4
 	17: -APPROXGen, 8
 	18: -INFinite,  4
-	19: -NEed,      2
+	19: -NEEDCone,  6
 	20: -SElf,      3
+	21: -ASsert,    3
+	22: -Called,    2
+	23: -NEEDFrame, 6
 ========================================================================*/
 
 CmdExecStatus
@@ -377,7 +384,7 @@ PdrCheckCmd::exec(char* options)const
 	size_t timeout = 0;
 	bool customTime = false;
 
-	size_t recycleVarNum = 0;
+	size_t recycleNum = 0;
 	bool customRecycle = false;
 
 	PdrSimType pst  = PDR_SIM_FORWARD_NORMAL;
@@ -386,15 +393,19 @@ PdrCheckCmd::exec(char* options)const
 	PdrDeqType pdt  = PDR_DEQ_STACK;
 	PdrPrpType ppt  = PDR_PRP_NORMAL;
 	PdrGenType pgt  = PDR_GEN_NORMAL;
-	bool rInf    = false;
-	bool cInNeed = false;
-	bool cSelf   = false;
+	bool rInf      = false;
+	bool cInNeedC  = false;
+	bool cSelf     = false;
+	bool assertF   = false;
+	bool recycleBQ = false;
+	bool cInNeedF  = false;
 
 	bool statON = false;
 	Array<bool> stat(PDR_STAT_TOTAL);
 	for(unsigned i = 0; i < PDR_STAT_TOTAL; ++i)
 		stat[i] = false;
-	bool verbose = false;
+
+	size_t verbosity = 0;
 
 	for(size_t i = 1, n = tokens.size(); i < n; ++i)
 		if(optMatch<0>(tokens[i]))
@@ -530,9 +541,34 @@ PdrCheckCmd::exec(char* options)const
 		}
 		else if(optMatch<14>(tokens[i]))
 		{
-			if(verbose)
+			if(verbosity != 0)
 				return errorOption(CMD_OPT_EXTRA, tokens[i]);
-			verbose = true;
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			char buffer[2] = { 0, 0 };
+			for(const char* tmp = tokens[i]; *tmp != 0; ++tmp)
+			{
+				size_t vMask;
+				switch(*tmp)
+				{
+					case 'a' : vMask = (size_t(1) << PDR_VERBOSE_TOTAL) - 1; break;
+					case 'o' : vMask =  size_t(1) << PDR_VERBOSE_OBL;        break;
+					case 'g' : vMask =  size_t(1) << PDR_VERBOSE_GEN;        break;
+					case 'p' : vMask =  size_t(1) << PDR_VERBOSE_PROP;       break;
+					case 'b' : vMask =  size_t(1) << PDR_VERBOSE_BLK;        break;
+					case 't' : vMask =  size_t(1) << PDR_VERBOSE_TERSIM;     break;
+					case 'c' : vMask =  size_t(1) << PDR_VERBOSE_CUBE;       break;
+					case 'i' : vMask =  size_t(1) << PDR_VERBOSE_INF;        break;
+					case 'm' : vMask =  size_t(1) << PDR_VERBOSE_MISC;       break;
+					case 'f' : vMask =  size_t(1) << PDR_VERBOSE_FINAL;      break;
+					default  :
+						buffer[0] = *tmp;
+						return errorOption(CMD_OPT_ILLEGAL, buffer);
+				}
+				if((verbosity & vMask) != 0)
+					{ buffer[0] = *tmp; return errorOption(CMD_OPT_EXTRA, buffer); }
+				verbosity |= vMask;
+			}
 		}
 		else if(optMatch<15>(tokens[i]))
 		{
@@ -540,7 +576,7 @@ PdrCheckCmd::exec(char* options)const
 				return errorOption(CMD_OPT_EXTRA, tokens[i]);
 			if(++i == n)
 				return errorOption(CMD_OPT_MISSING);
-			if(!myStrToUInt(tokens[i], recycleVarNum))
+			if(!myStrToUInt(tokens[i], recycleNum))
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
 			customRecycle = true;
 		}
@@ -564,9 +600,9 @@ PdrCheckCmd::exec(char* options)const
 		}
 		else if(optMatch<19>(tokens[i]))
 		{
-			if(cInNeed)
+			if(cInNeedC)
 				return errorOption(CMD_OPT_EXTRA, tokens[i]);
-			cInNeed = true;
+			cInNeedC = true;
 		}
 		else if(optMatch<20>(tokens[i]))
 		{
@@ -574,10 +610,31 @@ PdrCheckCmd::exec(char* options)const
 				return errorOption(CMD_OPT_EXTRA, tokens[i]);
 			cSelf = true;
 		}
+		else if(optMatch<21>(tokens[i]))
+		{
+			if(assertF)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			assertF = true;
+		}
+		else if(optMatch<22>(tokens[i]))
+		{
+			if(recycleBQ)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			if(!customRecycle)
+				return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
+			recycleBQ = true;
+		}
+		else if(optMatch<23>(tokens[i]))
+		{
+			if(cInNeedF)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			cInNeedF = true;
+		}
 		else return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
 	if(!checkNtk()) return CMD_EXEC_ERROR_INT;
-	SafetyChecker* checker = getChecker<PdrChecker>(aigNtk, outputIdx, trace, timeout, maxFrame, recycleVarNum, stat,
-	                                                pst, port, pobt, pdt, ppt, pgt, rInf, cInNeed, cSelf, verbose);
+	SafetyChecker* checker = getChecker<PdrChecker>(aigNtk, outputIdx, trace, timeout, maxFrame, recycleNum, stat,
+	                                                pst, port, pobt, pdt, ppt, pgt,
+	                                                rInf, cInNeedC, cSelf, assertF, recycleBQ, cInNeedF, verbosity);
 	if(checker == 0) return CMD_EXEC_ERROR_INT;
 	checker->Check(); delete checker; return CMD_EXEC_DONE;
 }
@@ -588,13 +645,14 @@ PdrCheckCmd::getUsageStr()const
 	return "<(unsigned outputIdx)> [-Trace]\n"
 	       "[-TImeout (unsigned timeout)]\n"
            "[-Max (unsigned maxFrame)]\n"
-	       "[-RECycle (unsigned recycleVarNum)]\n"
-           "[-EVent | -Backward | -INTernal] [-NEed]\n"
+	       "[<-RECycle (unsigned recycleNum)> [-Called]]\n"
+           "[-EVent | -Backward | -INTernal]\n"
+	       "[-NEEDCone] [-NEEDFrame]\n"
 	       "[<-ACtivity | -Decay> [-REVerse]] [-SElf]\n"
 	       "[-Push | -NOPush] [-Queue]\n"
 	       "[-APPROXGen | -NOGen]\n"
-	       "[-EAger] [-INFinite]\n"
-	       "[-STat (\"atsgprc\")] [-Verbose]\n";
+	       "[-EAger] [-INFinite] [-ASsert]\n"
+	       "[-STat (\"atsgprc\")] [-Verbose (\"aogpbtcimf\")]\n";
 }
 
 const char*

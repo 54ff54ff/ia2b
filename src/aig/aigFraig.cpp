@@ -157,7 +157,7 @@ AigFraiger::calMaxFail()const
 	double maxFailD = 3.0;
 	size_t n = ntk->getInputNum() + ntk->getLatchNum();
 	for(n = n < 6 ? 0 : n - 6; n != 0; n >>= 1) maxFailD *= 1.3;
-	for(n = ntk->getMaxGateNum(); n != 0; n >>= 2) maxFailD *= 1.4;
+	for(n = ntk->getGateNum(); n != 0; n >>= 2) maxFailD *= 1.4;
 	return size_t(maxFailD);
 }
 

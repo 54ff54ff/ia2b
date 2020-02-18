@@ -53,10 +53,20 @@ def initArgParser():
 	                    default = "",
 	                    help = "indicate the options of the command",
 	                    metavar = "option")
+	parser.add_argument("-bc", "--before-command",
+	                    type = str,
+	                    default = "",
+	                    help = "indicate the command before checking",
+	                    metavar = "bCmd", dest = "bCmd")
+	parser.add_argument("-ac", "--after-command",
+	                    type = str,
+	                    default = "",
+	                    help = "indicate the command after checking",
+	                    metavar = "aCmd", dest = "aCmd")
 	return parser
 
 class RunBase:
-	def __init__(self, execFile, inputTemplate, checkFunc, inDir, outDir, timeout, option):
+	def __init__(self, execFile, inputTemplate, checkFunc, inDir, outDir, timeout, option, bCmd, aCmd):
 		self.execFile      = execFile
 		self.inputTemplate = inputTemplate
 		self.checkFunc     = checkFunc
@@ -64,12 +74,14 @@ class RunBase:
 		self.outDir        = outDir
 		self.timeout       = timeout
 		self.option        = option
+		self.bCmd          = bCmd
+		self.aCmd          = aCmd
 
 	def __call__(self, caseFile):
 		inFile  = tf.TemporaryFile(mode = "w+")
 		outFile = open(self.outDir + caseFile + ".log", 'w+')
 
-		inFile.write(self.inputTemplate.format(self.inDir + caseFile, self.option))
+		inFile.write(self.inputTemplate.format(self.inDir + caseFile, self.bCmd, self.option, self.aCmd))
 		inFile.seek(0)
 
 		try:
@@ -439,7 +451,9 @@ methodToParam = \
 	            "../LSV/hehe/abc/abc",
 	            checkAbcMC],
 	"Ia2bPdrRun" : ["read aig {}\n"
+	                "{}\n"
 	                "check safety pdr 0 {} -m 50000\n"
+	                "{}\n"
 	                "time\n"
 	                "quit\n",
 	                "./ia2b_run",
@@ -470,7 +484,8 @@ if __name__ == "__main__":
 		print("Invalid process!"); sys.exit(1)
 	try: runParam = methodToParam[param["method"]]
 	except: print("No such method!"); sys.exit(1)
-	runBase = RunBase(runParam[1], runParam[0], runParam[2], param["inDir"], param["outDir"], param["timeout"], param["option"])
+	runBase = RunBase(runParam[1], runParam[0], runParam[2],
+	                  param["inDir"], param["outDir"], param["timeout"], param["option"], param["bCmd"], param["aCmd"])
 	caseList = [file for file in os.listdir(param["inDir"]) if file.endswith(param["suffix"])]
 #	runResult = mp.Pool(param["process"]).map(runBase, caseList)
 	runResult = []
@@ -479,6 +494,8 @@ if __name__ == "__main__":
 	print("Executable    =", runParam[1])
 	print("Method        =", param["method"])
 	print("Option        =", "None" if len(param["option"]) == 0 else param["option"])
+	print("Pre Command   =", "None" if len(param["bCmd"]) == 0 else param["bCmd"])
+	print("Post Command  =", "None" if len(param["aCmd"]) == 0 else param["aCmd"])
 	print("Time Limit    =", param["timeout"])
 	print("No. Core      =", param["process"])
 	print("AIG direcotry =", param["inDir"])

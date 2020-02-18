@@ -11,14 +11,24 @@
 #include "aigNtk.h"
 #include "aigFraig.h"
 #include "aigBalance.h"
-#include "aigMisc.h"
+#include "aigMisc1.h"
 #include "condStream.h"
+#include "aigMisc2.h"
 using namespace std;
 
 namespace _54ff
 {
 
 AigNtk* aigNtk = 0;
+
+AigGate* checkGate(AigGateID id, bool report)
+{
+	assert(aigNtk != 0);
+	AigGate* g = aigNtk->getGateCheck(id);
+	if(g == 0 && report)
+		cerr << "[Error] Gate with ID " << id << " does not exist!" << endl;
+	return g;
+}
 
 AigNtk::~AigNtk()
 {
@@ -252,6 +262,57 @@ AigNtk::printInfluence()const
 	return true;
 }
 
+void
+AigNtk::printCone(AigGateID COId, size_t maxDepth)const
+{
+	const size_t L = getLatchNum();
+	cout << "0: " << COId << endl;
+	if(maxDepth == 0) return;
+	AigGate::setGlobalRef();
+	AigGate* g = getGate(COId);
+	g->setToGlobalRef();
+	g->getFanIn0Ptr()->traverseFromCO();
+	Array<bool> latchInCone(L);
+	for(size_t i = 0; i < L; ++i)
+		latchInCone[i] = getLatch(i)->isGlobalRef();
+	printCone(latchInCone, maxDepth, 1);
+}
+
+void
+AigNtk::printCone(Array<bool>& latchInCone, size_t maxDepth, size_t depth)const
+{
+	const size_t L = getLatchNum();
+	auto printLatchInCone = [&latchInCone, &depth, this, L]()
+	{
+		cout << depth++ << ":";
+		for(size_t i = 0; i < L; ++i)
+			if(latchInCone[i])
+				cout << " " << getLatchID(i);
+		cout << endl;
+	};
+
+	AigGate::setGlobalRef();
+	for(size_t i = 0; i < L; ++i)
+		if(latchInCone[i])
+			getLatch(i)->setToGlobalRef();
+	do
+	{
+		printLatchInCone();
+		if(depth > maxDepth)
+			break;
+		for(size_t i = 0; i < L; ++i)
+			if(latchInCone[i])
+				getLatch(i)->getFanIn0Ptr()->traverseFromCO();
+		bool change = false;
+		for(size_t i = 0; i < L; ++i)
+			if(latchInCone[i])
+				assert(getLatch(i)->isGlobalRef());
+			else if(getLatch(i)->isGlobalRef())
+				{ latchInCone[i] = true; change = true; }
+		if(!change) break;
+	} while(true);
+}
+
 bool
 AigNtk::compress()
 {
@@ -351,6 +412,12 @@ bool
 AigNtk::balance()
 {
 	return aigBalancer->balance(this);
+}
+
+bool
+AigNtk::rmConstLatch()
+{
+	return AigConster(this).doSimp();
 }
 
 bool

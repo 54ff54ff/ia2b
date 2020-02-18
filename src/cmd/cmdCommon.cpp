@@ -17,7 +17,8 @@ const string CmdTypeStr[CMD_TYPE_TOTAL] =
 	"I/O",
 	"Display",
 	"Synthesis",
-	"Verification"
+	"Verification",
+	"Experiment"
 };
 
 void

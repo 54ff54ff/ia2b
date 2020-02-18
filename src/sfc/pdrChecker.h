@@ -10,7 +10,7 @@
 #include <deque>
 #include "sfcChecker.h"
 #include "cirSolver.h"
-#include "aigMisc.h"
+#include "aigMisc1.h"
 #include "stat.h"
 using namespace std;
 
@@ -75,7 +75,22 @@ enum PdrStatType
 	PDR_STAT_ALL
 };
 
+enum PdrVerboseType
+{
+	PDR_VERBOSE_OBL = 0,
+	PDR_VERBOSE_GEN,
+	PDR_VERBOSE_PROP,
+	PDR_VERBOSE_BLK,
+	PDR_VERBOSE_TERSIM,
+	PDR_VERBOSE_CUBE,
+	PDR_VERBOSE_INF,
+	PDR_VERBOSE_MISC,
+	PDR_VERBOSE_FINAL,
+	PDR_VERBOSE_TOTAL
+};
+
 extern const string pdrStatStr[PDR_STAT_TOTAL];
+extern const string pdrVerboseStr[PDR_VERBOSE_TOTAL];
 
 class PdrTerSimStat : public Stat<3, 1>
 {
@@ -104,7 +119,7 @@ public:
 	void setAD(size_t d) { if(d > maxAbort_D) maxAbort_D = d; }
 
 protected:
-	size_t minSAT_D, maxUNSAT_D, maxAbort_D;
+	size_t  minSAT_D, maxUNSAT_D, maxAbort_D;
 };
 
 class PdrUnsatGenStat : public Stat<2, 2>
@@ -127,25 +142,43 @@ public:
 	void printStat()const;
 };
 
-class PdrRecycleStat : public Stat<2, 1>
+class PdrRecycleStat : public Stat<1, 1>
 {
 public:
-	void checkMaxRecNum(size_t n)
-		{ if(n > getNum(1)) setNum(1, n); }
+	PdrRecycleStat(): Stat<1, 1>(), maxRecNum(0) {}
+
+	void checkMaxRecNum(size_t n) { if(n > maxRecNum) maxRecNum = n; }
 
 	void printStat()const;
+
+protected:
+	size_t  maxRecNum;
 };
 
-class PdrCubeStat : public Stat<5, 0>
+class PdrCubeStat : public Stat<8, 1>
 {
 public:
-	void incSubsumeAddObl()        { countOne(0); }
-	void incSelfSubsumeAddObl()    { countOne(1); }
-	void incSubsumeBlockObl()      { countOne(2); }
-	void incSubsumeBlockCube()     { countOne(3); }
-	void incSelfSubsumeBlockCube() { countOne(4); }
+	PdrCubeStat()
+	: Stat<8, 1>   ()
+	, maxBadNum    (0)
+	, maxInfClsLen (0) {}
+
+	void incSubsumeAddObl()        { countOne(1); }
+	void incSelfSubsumeAddObl()    { countOne(2); }
+	void incSubsumeBlockObl()      { countOne(3); }
+	void incSubsumeBlockCube()     { countOne(4); }
+	void incSelfSubsumeBlockCube() { countOne(5); }
+
+	void incInfLitNum(size_t n) { countN(6, n); }
+	void incInfCubeNum()        { countOne(7); }
+
+	void checkMaxBNum(size_t n) { if(n > maxBadNum) maxBadNum = n; }
+	void checkMaxCLen(size_t n) { if(n > maxInfClsLen) maxInfClsLen = n; }
 
 	void printStat()const;
+
+protected:
+	size_t  maxBadNum, maxInfClsLen;
 };
 
 /* The memory alignment of PdrCube
@@ -176,9 +209,11 @@ public:
 	const AigGateLit* begin()const { return uint32Ptr; }
 	const AigGateLit* end  ()const { return uint32Ptr + getSize(); }
 
+	bool operator<(const PdrCube& c)const;
+
 	void setSize(size_t s) { *(uint64Ptr - 1) = s; }
 	void setLit(size_t i, AigGateLit lit) { *(uint32Ptr + i) = lit; }
-	void calAbstract(size_t i) { *(uint64Ptr - 2) |= (1 << (getGateID(getLit(i)) & 63)); }
+	void calAbstract(size_t i) { *(uint64Ptr - 2) |= (size_t(1) << (getGateID(getLit(i)) & 63)); }
 	void initAbstract() { *(uint64Ptr - 2) = 0; }
 
 	size_t getSize()const  { return *(uint64Ptr - 1); }
@@ -197,7 +232,7 @@ public:
 	bool isNone()const { return uint32Ptr == 0; }
 	void* getOriPtr()const { return uint64Ptr - 4; }
 
-	AigGateLit subsume(const PdrCube& c)const { return subsumeTrivial(c); }
+	AigGateLit subsume(const PdrCube& c)const { return subsumeComplex(c); }
 	AigGateLit subsumeTrivial(const PdrCube&)const;
 	AigGateLit subsumeComplex(const PdrCube&)const;
 
@@ -227,7 +262,7 @@ class PdrChecker : public SafetyBChecker
 public:
 	PdrChecker(AigNtk*, size_t, bool, size_t, size_t, size_t, const Array<bool>&,
 	           PdrSimType, PdrOrdType, PdrOblType, PdrDeqType, PdrPrpType, PdrGenType,
-	           bool, bool, bool, bool);
+	           bool, bool, bool, bool, bool, bool, size_t);
 	~PdrChecker();
 
 protected:
@@ -250,6 +285,9 @@ protected:
 
 	void newFrame();
 	void addBlockedCube(const PdrTCube&, size_t = 1);
+	void addBlockedCubeFrame(size_t, const PdrCube&)const;
+	void addBlockedCubeFrame(size_t)const;
+	void addBlockedCubeInf()const;
 
 	PdrCube terSim                (const vector<AigGateID>&)const;
 	void    terSimForwardNormal   (const vector<AigGateID>&)const;
@@ -284,20 +322,28 @@ protected:
 	void checkRecycle();
 	void convertCNF()const;
 	void convertCNF(const PdrCube&)const;
-	void addInitState();
+	void convertFrame(size_t)const;
+	void addInitState()const;
 
 	void refineInf();
 	void checkMaxD(size_t d)const { if(d > maxUNSAT_D) maxUNSAT_D = d; }
 	void checkThenPushObl(size_t, const PdrCube&);
+	bool isVerboseON(PdrVerboseType pvt)const { return verbosity & (size_t(1) << pvt); }
+	void printIndInv();
+	size_t getCurRecycleNum()const { return recycleByQuery ? satQueryTime : unusedVarNum; }
+	AigGateLit subsume(const PdrCube&, const PdrCube&)const;
+	void mergeInf(const vector<PdrCube>&);
 
 protected:
 	size_t  curFrame;
 	size_t  maxFrame;
 
+	mutable size_t  satQueryTime;
 	mutable size_t  unusedVarNum;
-	const size_t    recycleVarNum;
+	const size_t    recycleNum;
 
-	mutable size_t maxUNSAT_D;
+	mutable size_t  maxUNSAT_D;
+	mutable size_t  curMinF;
 
 	vector<vector<PdrCube>>  frame;
 	SolverPtr<CirSolver>     solver;
@@ -324,10 +370,17 @@ protected:
 	PdrPrpType  prpType;
 	PdrGenType  genType;
 	bool        toRefineInf;
-	bool        convertInNeed;
+	bool        convertInNeedCone;
 	bool        checkSelf;
+	bool        assertFrame;
+	bool        recycleByQuery;
 
-	bool  verbose;
+	bool            convertInNeedFrame;
+	mutable size_t  frameConverted;
+
+	mutable vector<Lit>  litList;
+
+	size_t  verbosity;
 
 	static constexpr size_t FRAME_NULL = numeric_limits<size_t>::max() - 1;
 	static constexpr size_t FRAME_INF  = numeric_limits<size_t>::max();

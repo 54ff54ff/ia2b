@@ -25,6 +25,7 @@ inline bool checkNtk(bool report = true)
 		{ if(report) cerr << "[Error] Empty network!" << endl; return false; }
 	else return true;
 }
+AigGate* checkGate(AigGateID, bool = true);
 
 class AigNtk
 {
@@ -66,6 +67,7 @@ public:
 	/*====================================*/
 
 	AigGate* getGate(AigGateID id)const { return gateList[id]; }
+	AigGate* getGateCheck(AigGateID id)const { return id > getMaxGateNum() ? 0 : getGate(id); }
 	AigGate* getInputNorm (size_t i)const { return getGate(getInputID (i)); }
 	AigGate* getLatchNorm (size_t i)const { return getGate(getLatchID (i)); }
 	AigGate* getOutputNorm(size_t i)const { return getGate(getOutputID(i)); }
@@ -88,6 +90,9 @@ public:
 	bool printLevel()const;
 	bool printInfluence()const;
 
+	void printCone(AigGateID, size_t)const;
+	void printCone(Array<bool>&, size_t, size_t = 0)const;
+
 	/*====================================*/
 
 	bool compress();
@@ -97,6 +102,7 @@ public:
 	bool calReachable();
 	bool fraig();
 	bool balance();
+	bool rmConstLatch();
 
 	bool simulate(const char*, bool, const char*)const;
 

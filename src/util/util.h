@@ -138,7 +138,7 @@ bool myStrToInt(const char* str, IntType& num)
 		}
 		else return false;
 	if(sign) num = -num;
-	if(leadZero) cerr << "[Warning] Leading zero(s) on a number should be avoided!" << endl;
+	if(leadZero) cerr << "[Warning] Leading zero(s) on a number (" << str << ") should be avoided!" << endl;
 	if(overflow) cerr << "[Warning] Overflow detected, the resulting number is " << num << "!" << endl;
 	return true;
 }
@@ -164,7 +164,7 @@ bool myStrToUInt(const char* str, UIntType& num)
 				leadZero = true;
 		}
 		else return false;
-	if(leadZero) cerr << "[Warning] Leading zero(s) on a number should be avoided!" << endl;
+	if(leadZero) cerr << "[Warning] Leading zero(s) on a number (" << str << ") should be avoided!" << endl;
 	if(overflow) cerr << "[Warning] Overflow detected, the resulting number is " << num << "!" << endl;
 	return true;
 }

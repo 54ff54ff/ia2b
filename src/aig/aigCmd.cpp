@@ -28,16 +28,22 @@ CmdClass(PrintNetwork, CMD_TYPE_DISPLAY, 9, "-Summary",   2,
                                             "-LEvel",     3,
                                             "-Influence", 2);
 
-CmdClass(SimpNetwork, CMD_TYPE_SYNTHESIS, 7, "-COMpress",   4,
+CmdClass(SimpNetwork, CMD_TYPE_SYNTHESIS, 8, "-COMpress",   4,
                                              "-One",        2,
                                              "-Two",        2,
-                                             "-CONe",       4,
+                                             "-CONE",       5,
                                              "-Reachable",  2,
                                              "-Fraig",      2,
-                                             "-Balance",    2);
+                                             "-Balance",    2,
+                                             "-CONStant",   5);
 
 CmdClass(SimuNetwork, CMD_TYPE_VERIFICATION, 2, "-All",    2,
                                                 "-Output", 2);
+
+CmdClass(PrintConeM, CMD_TYPE_EXPERIMENT, 0);
+CmdClass(PrintConeS, CMD_TYPE_EXPERIMENT, 1, "-Depth", 2);
+CmdClass(AddCube,    CMD_TYPE_EXPERIMENT, 2, "-Number", 2,
+                                             "-Human",  2);
 
 CmdClass(TestNetwork, CMD_TYPE_HIDDEN, 5, "-COPYOld", 6,
                                           "-COPYNew", 6,
@@ -62,6 +68,10 @@ struct AigRegistrar : public CmdRegistrar
 		setLine(); cmdMgr->regCmd<SimpNetworkCmd>("SIMPlify NEtwork", 4, 2);
 
 		setLine(); cmdMgr->regCmd<SimuNetworkCmd>("SIMUlate NEtwork", 4, 2);
+
+		setLine(); cmdMgr->regCmd<PrintConeMCmd  >("PRInt COne Multiple", 3, 2, 1);
+		setLine(); cmdMgr->regCmd<PrintConeSCmd  >("PRInt COne Single",   3, 2, 1);
+		setLine(); cmdMgr->regCmd<AddCubeCmd     >("ADD CUbe",            3, 2);
 
 		setLine(); cmdMgr->regCmd<TestNetworkCmd>("TESt NEtwork", 3, 2);
 		setLine(); cmdMgr->regCmd<SizeNetworkCmd>("SIZe NEtwork", 3, 2);
@@ -203,7 +213,7 @@ WriteAagCmd::getHelpStr()const
 }
 
 /*========================================================================
-	PRInt Gate <<(unsigned gateId)> [-Cone (unsigned level) [-Bound]]>
+	PRInt Gate <<(unsigned gateId)> [<-Cone (unsigned level)> [-Bound]]>
 --------------------------------------------------------------------------
 	0: -Cone,  2
 	1: -Bound, 2
@@ -239,18 +249,16 @@ PrintGateCmd::exec(char* options)const
 		}
 	}
 	if(!checkNtk()) return CMD_EXEC_ERROR_INT;
-	AigGate* g;
-	if(id > aigNtk->getMaxGateID() ||
-	   (g = aigNtk->getGate(id)) == 0)
-		{ cerr << "[Error] Gate with ID " << id << " does not exist!" << endl; return CMD_EXEC_ERROR_INT; }
-	cone ? g->printFanInCone(level, bound) : g->printStat();
+	if(AigGate* g = checkGate(id); g == 0)
+		return CMD_EXEC_ERROR_INT;
+	else cone ? g->printFanInCone(level, bound) : g->printStat();
 	return CMD_EXEC_DONE;
 }
 
 const char*
 PrintGateCmd::getUsageStr()const
 {
-	return "<<(unsigned gateId)> [-Cone (unsigned level) [-Bound]]>\n";
+	return "<<(unsigned gateId)> [<-Cone (unsigned level)> [-Bound]]>\n";
 }
 
 const char*
@@ -332,7 +340,7 @@ PrintNetworkCmd::getHelpStr()const
 
 /*========================================================================
 	SIMPlify NEtwork <-COMpress | -One | -Two | -CONE | -Reachable |
-	                  -Fraig | -Balance>
+	                  -Fraig | -Balance | -CONStant>
 --------------------------------------------------------------------------
 	0: -COMpress,   4
 	1: -One,        2
@@ -341,13 +349,14 @@ PrintNetworkCmd::getHelpStr()const
 	4: -Reachable,  2
 	5: -Fraig,      2
 	6: -Balance,    2
+	7: -CONStant,   5
 ========================================================================*/
 
 CmdExecStatus
 SimpNetworkCmd::exec(char* options)const
 {
 	enum { NONE, COMPRESS, ONE, TWO, CONE, REACHABLE,
-	       FRAIG, BALANCE } type = NONE;
+	       FRAIG, BALANCE, CONSTANT } type = NONE;
 	for(const char* token: breakToTokens(options))
 		if(optMatch<0>(token))
 			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, token); type = COMPRESS; }
@@ -363,6 +372,8 @@ SimpNetworkCmd::exec(char* options)const
 			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, token); type = FRAIG; }
 		else if(optMatch<6>(token))
 			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, token); type = BALANCE; }
+		else if(optMatch<7>(token))
+			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, token); type = CONSTANT; }
 		else return errorOption(CMD_OPT_ILLEGAL, token);
 	if(type == NONE) return errorOption(CMD_OPT_MISSING);
 	if(!checkNtk()) return CMD_EXEC_ERROR_INT;
@@ -377,6 +388,7 @@ SimpNetworkCmd::exec(char* options)const
 		case REACHABLE: success = aigNtk->calReachable();    break;
 		case FRAIG:     success = aigNtk->fraig();           break;
 		case BALANCE:   success = aigNtk->balance();         break;
+		case CONSTANT:  success = aigNtk->rmConstLatch();    break;
 	}
 	return success ? CMD_EXEC_DONE : CMD_EXEC_ERROR_INT;
 }
@@ -385,7 +397,7 @@ const char*
 SimpNetworkCmd::getUsageStr()const
 {
 	return "<-COMpress | -One | -Two | -CONE | -Reachable |\n"
-	       " -Fraig | -Balance>\n";
+	       " -Fraig | -Balance | -CONStant>\n";
 }
 
 const char*
@@ -442,6 +454,169 @@ const char*
 SimuNetworkCmd::getHelpStr()const
 {
 	return "Perform 3-value simulation on the AIG network based on the given pattern\n";
+}
+
+/*========================================================================
+	PRInt COne Multiple <(unsigned latchId)...>
+========================================================================*/
+
+CmdExecStatus
+PrintConeMCmd::exec(char* options)const
+{
+	PureStrList tokens = breakToTokens(options);
+	if(tokens.empty())
+		return errorOption(CMD_OPT_MISSING);
+	vector<AigGateID> latchIds(tokens.size());
+	for(size_t i = 0, n = tokens.size(); i < n; ++i)
+		if(!myStrToUInt(tokens[i], latchIds[i]))
+			return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+	if(!checkNtk()) return CMD_EXEC_ERROR_INT;
+	AigGate::setGlobalRef();
+	for(AigGateID latchId: latchIds)
+		if(AigGate* g = checkGate(latchId); g == 0)
+			return CMD_EXEC_ERROR_INT;
+		else if(g->getGateType() != AIG_LATCH)
+			{ cerr << "[Error] Gate with ID " << latchId << " is not a latch!" << endl; return CMD_EXEC_ERROR_INT; }
+		else if(g->isGlobalRef())
+			{ cerr << "[Error] Gate with ID " << latchId << " is duplicated!" << endl; return CMD_EXEC_ERROR_INT; }
+		else g->setToGlobalRef();
+	Array<bool> latchInvolved(aigNtk->getLatchNum());
+	for(size_t i = 0, L = aigNtk->getLatchNum(); i < L; ++i)
+		latchInvolved[i] = aigNtk->getLatch(i)->isGlobalRef();
+	aigNtk->printCone(latchInvolved, numeric_limits<size_t>::max());
+	return CMD_EXEC_DONE;
+}
+
+const char*
+PrintConeMCmd::getUsageStr()const
+{
+	return "<(unsigned latchId)...>\n";
+}
+
+const char*
+PrintConeMCmd::getHelpStr()const
+{
+	return "Print the latches within cone for multiple targets in AIG network\n";
+}
+
+/*========================================================================
+	PRInt COne Single <<(unsigned COId)> [-Depth (unsigned maxDepth)]>
+--------------------------------------------------------------------------
+	0: -Depth, 2
+========================================================================*/
+
+CmdExecStatus
+PrintConeSCmd::exec(char* options)const
+{
+	PureStrList tokens = breakToTokens(options);
+	if(tokens.size() == 0)
+		return errorOption(CMD_OPT_MISSING);
+	size_t COId;
+	if(!myStrToUInt(tokens[0], COId))
+		return errorOption(CMD_OPT_INVALID_UINT, tokens[0]);
+	else if(!checkNtk())
+		return CMD_EXEC_ERROR_INT;
+	else if(AigGate* g = checkGate(COId); g == 0)
+		return CMD_EXEC_ERROR_INT;
+	else if(!g->isCO())
+		{ cerr << "[Error] Gate with ID " << COId << " is not a CO!" << endl; return CMD_EXEC_ERROR_INT; }
+
+	size_t maxDepth = numeric_limits<size_t>::max();
+	if(tokens.size() > 1)
+	{
+		if(!optMatch<0>(tokens[1]))
+			return errorOption(CMD_OPT_ILLEGAL, tokens[1]);
+		if(tokens.size() == 2)
+			return errorOption(CMD_OPT_MISSING);
+		if(!myStrToUInt(tokens[2], maxDepth))
+			return errorOption(CMD_OPT_INVALID_UINT, tokens[2]);
+		if(tokens.size() > 3)
+			return errorOption(CMD_OPT_EXTRA, tokens[4]);
+	}
+	aigNtk->printCone(COId, maxDepth);
+	return CMD_EXEC_DONE;
+}
+
+const char*
+PrintConeSCmd::getUsageStr()const
+{
+	return "<<(unsigned COId)> [-Depth (unsigned maxDepth)]>\n";
+}
+
+const char*
+PrintConeSCmd::getHelpStr()const
+{
+	return "Print the latches within cone for single target in AIG network\n";
+}
+
+/*========================================================================
+	ADD CUbe <-Number (unsigned latchLit)... |
+	          -Human  (string   latchLit)...>
+--------------------------------------------------------------------------
+	0: -Number, 2
+	1: -Human,  2
+========================================================================*/
+
+CmdExecStatus
+AddCubeCmd::exec(char* options)const
+{
+	PureStrList tokens = breakToTokens(options);
+	if(tokens.empty())
+		return errorOption(CMD_OPT_MISSING);
+	bool humanReadable;
+	if(optMatch<0>(tokens[0]))
+		humanReadable = false;
+	else if(optMatch<1>(tokens[0]))
+		humanReadable = true;
+	else return errorOption(CMD_OPT_ILLEGAL, tokens[0]);
+
+	if(tokens.size() == 1)
+		return errorOption(CMD_OPT_MISSING);
+	vector<AigGateLit> latchLits(tokens.size() - 1);
+	if(humanReadable)
+	{
+		for(size_t i = 1, n = tokens.size(); i < n; ++i)
+		{
+			bool isInv = false;
+			if(tokens[i][0] == '!')
+				{ isInv = true; tokens[i] += 1; }
+			if(!myStrToUInt(tokens[i], latchLits[i-1]))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			latchLits[i-1] = makeToLit(AigGateID(latchLits[i-1]), isInv);
+		}
+	}
+	else
+	{
+		for(size_t i = 1, n = tokens.size(); i < n; ++i)
+			if(!myStrToUInt(tokens[i], latchLits[i-1]))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+	}
+
+	if(!checkNtk()) return CMD_EXEC_ERROR_INT;
+	vector<AigGateV> gateList;
+	gateList.reserve(latchLits.size());
+	for(AigGateLit lit: latchLits)
+		if(AigGate* g = checkGate(getGateID(lit)); g == 0)
+			return CMD_EXEC_ERROR_INT;
+		else if(g->getGateType() == AIG_PO)
+			{ cerr << "[Error] Gate with ID " << getGateID(lit) << " is a PO!" << endl; return CMD_EXEC_ERROR_INT; }
+		else gateList.emplace_back(g, isInv(lit));
+	cout << "The new PO is no " << aigNtk->getOutputNum()
+	     << " with ID "         << aigNtk->createOutput(aigNtk->createAnd(gateList))->getGateID() << endl;
+	return CMD_EXEC_DONE;
+}
+
+const char*
+AddCubeCmd::getUsageStr()const
+{
+	return "<-Number (unsigned latchLit)... |\n"
+	       " -Human  (string   latchLit)...>\n";
+}
+
+const char*
+AddCubeCmd::getHelpStr()const
+{
+	return "Create a new PO to represent a cube in AIG network\n";
 }
 
 /*========================================================================

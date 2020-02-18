@@ -10,7 +10,7 @@
 
 #include "sfcChecker.h"
 #include "cirSolver.h"
-#include "aigMisc.h"
+#include "aigMisc1.h"
 #include "stat.h"
 
 namespace _54ff

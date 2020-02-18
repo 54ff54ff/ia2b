@@ -1125,7 +1125,7 @@ if(!withinBudget())
 	    if(conflicts>=curRestart* nbclausesbeforereduce) 
 	      {
 	
-		assert(learnts.size()>0);
+//		assert(learnts.size()>0);
 		curRestart = (conflicts/ nbclausesbeforereduce)+1;
 		reduceDB();
 		nbclausesbeforereduce += incReduceDB;
