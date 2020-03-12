@@ -6,6 +6,7 @@
 
 #include <iomanip>
 #include "util.h"
+#include "condStream.h"
 using namespace std;
 
 namespace _54ff
@@ -14,10 +15,10 @@ namespace _54ff
 void
 Progresser::cleanCurLine()const
 {
-	repeatChar(padding + 2 + strLen, '\b');               //counter -> ": " -> prompt
-	repeatChar(strLen + 2 + padding + 1 + padding, ' ');  //prompt -> ": " -> counter -> "/" -> maxNum
-	repeatChar(padding + 1 + padding + 2 + strLen, '\b'); //maxNum -> "/" -> counter -> ": " -> prompt
-	cout.flush();
+	cout << RepeatChar('\b', padding + 2 + strLen)               // counter -> ": " -> prompt
+	     << RepeatChar(' ',  strLen + 2 + padding + 1 + padding) // prompt  -> ": " -> counter -> "/"  -> maxNum
+	     << RepeatChar('\b', padding + 1 + padding + 2 + strLen) // maxNum  -> "/"  -> counter -> ": " -> prompt
+	     << flush;
 }
 
 void
@@ -25,16 +26,16 @@ Progresser::printLine()const
 {
 	cout << prompt << ": "
 	     << right << setw(padding) << counter
-	     << "/" << maxNum;
-	repeatChar(padding + 1, '\b'); //maxNum -> "/"
-	cout.flush();
+	     << "/" << maxNum
+	     << RepeatChar('\b', padding + 1) // maxNum -> "/"
+	     << flush;
 }
 
 void
 Progresser::count(size_t diff)
 {
-	repeatChar(padding, '\b'); //counter
-	cout << setw(padding) << (counter += diff) << flush;
+	cout << RepeatChar('\b', padding) // counter
+	     << setw(padding) << (counter += diff) << flush;
 }
 
 }

@@ -36,8 +36,8 @@ inline AigGateID getGateID(AigGateLit lit) { return lit >> 1; }
 inline bool isInv(AigGateLit lit) { return lit & 1; }
 inline AigGateLit makeToLit(AigGateID id, bool inv) { return (id << 1) | AigGateLit(inv); }
 
-constexpr AigGateLit UNDEF_GATELIT = numeric_limits<AigGateID>::max();
-constexpr AigGateLit ERROR_GATELIT = numeric_limits<AigGateID>::max() - 1;
+constexpr AigGateLit UNDEF_GATELIT = numeric_limits<AigGateLit>::max();
+constexpr AigGateLit ERROR_GATELIT = numeric_limits<AigGateLit>::max() - 1;
 
 //forward declaration
 class AigNtk;

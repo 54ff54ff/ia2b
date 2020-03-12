@@ -483,7 +483,7 @@ PrintConeMCmd::exec(char* options)const
 	Array<bool> latchInvolved(aigNtk->getLatchNum());
 	for(size_t i = 0, L = aigNtk->getLatchNum(); i < L; ++i)
 		latchInvolved[i] = aigNtk->getLatch(i)->isGlobalRef();
-	aigNtk->printCone(latchInvolved, numeric_limits<size_t>::max());
+	aigNtk->printCone(latchInvolved, MAX_SIZE_T);
 	return CMD_EXEC_DONE;
 }
 
@@ -521,7 +521,7 @@ PrintConeSCmd::exec(char* options)const
 	else if(!g->isCO())
 		{ cerr << "[Error] Gate with ID " << COId << " is not a CO!" << endl; return CMD_EXEC_ERROR_INT; }
 
-	size_t maxDepth = numeric_limits<size_t>::max();
+	size_t maxDepth = MAX_SIZE_T;
 	if(tokens.size() > 1)
 	{
 		if(!optMatch<0>(tokens[1]))

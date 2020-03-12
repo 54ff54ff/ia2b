@@ -14,19 +14,19 @@ namespace _54ff
 
 BmcChecker::BmcChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t timeout,
 	                   size_t maxD, BmcCheckType t)
-: SafetyChecker (ntkToCheck, outputIdx, _trace, timeout)
-, maxDepth      (maxD)
-, type          (t)
+: SafetyNCChecker (ntkToCheck, outputIdx, _trace, timeout)
+, maxDepth        (maxD)
+, type            (t)
 {
-	cout << "Max depth  : " << maxDepth << endl
-	     << "Method     : Bounded model checking" << endl
-	     << "Detail     : ";
+	sfcMsg << "Max depth  : " << maxDepth << endl
+	       << "Method     : Bounded model checking" << endl
+	       << "Detail     : ";
 	switch(type)
 	{
-		case BMC_ASSERT    : cout << "Assert already proved property";     break;
-		case BMC_ONLY_LAST : cout << "Only the last property is involved"; break;
+		case BMC_ASSERT    : sfcMsg << "Assert already proved property";     break;
+		case BMC_ONLY_LAST : sfcMsg << "Only the last property is involved"; break;
 	}
-	cout << endl;
+	sfcMsg << endl;
 }
 
 void
@@ -59,20 +59,20 @@ BmcChecker::check()
 
 IndChecker::IndChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t timeout,
 	                   size_t maxD, IndCheckType t)
-: SafetyChecker (ntkToCheck, outputIdx, _trace, timeout)
-, maxDepth      (maxD)
-, type          (t)
+: SafetyNCChecker (ntkToCheck, outputIdx, _trace, timeout)
+, maxDepth        (maxD)
+, type            (t)
 {
-	cout << "Max depth  : " << maxDepth << endl
-	     << "Method     : K-induction" << endl
-	     << "Detail     : ";
+	sfcMsg << "Max depth  : " << maxDepth << endl
+	       << "Method     : K-induction" << endl
+	       << "Detail     : ";
 	switch(type)
 	{
-		case IND_SIMPLE_NO   : cout << "No simple constraint";            break;
-		case IND_SIMPLE_NEED : cout << "Add simple constraint if needed"; break;
-		case IND_SIMPLE_ALL  : cout << "Add all simple constraints";      break;
+		case IND_SIMPLE_NO   : sfcMsg << "No simple constraint";            break;
+		case IND_SIMPLE_NEED : sfcMsg << "Add simple constraint if needed"; break;
+		case IND_SIMPLE_ALL  : sfcMsg << "Add all simple constraints";      break;
 	}
-	cout << endl;
+	sfcMsg << endl;
 }
 
 void
@@ -183,20 +183,20 @@ IndChecker::check()
 
 ItpChecker::ItpChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t timeout,
 	                   size_t maxD, ItpCheckType t)
-: SafetyChecker (ntkToCheck, outputIdx, _trace, timeout)
-, maxDepth      (maxD)
-, type          (t)
+: SafetyNCChecker (ntkToCheck, outputIdx, _trace, timeout)
+, maxDepth        (maxD)
+, type            (t)
 {
-	cout << "Max depth  : " << maxDepth << endl
-	     << "Method     : Interpolation" << endl
-	     << "Detail     : ";
+	sfcMsg << "Max depth  : " << maxDepth << endl
+	       << "Method     : Interpolation" << endl
+	       << "Detail     : ";
 	switch(type)
 	{
-		case ITP_ALL_NOT_P : cout << "Disjunct all the property in the offset"; break;
-		case ITP_ASSERT    : cout << "Assert already proved property";          break;
-		case ITP_ONLY_LAST : cout << "Only the last property is involved";      break;
+		case ITP_ALL_NOT_P : sfcMsg << "Disjunct all the property in the offset"; break;
+		case ITP_ASSERT    : sfcMsg << "Assert already proved property";          break;
+		case ITP_ONLY_LAST : sfcMsg << "Only the last property is involved";      break;
 	}
-	cout << endl;
+	sfcMsg << endl;
 }
 
 void

@@ -12,9 +12,11 @@
 #include "cirSolver.h"
 #include "aigMisc1.h"
 #include "stat.h"
+#include "alg.h"
 using namespace std;
 
 //#define UsePatternCheckSAT
+//#define CheckOblCommonPart
 
 namespace _54ff
 {
@@ -70,10 +72,12 @@ enum PdrStatType
 	PDR_STAT_PROPAGATE,
 	PDR_STAT_RECYCLE,
 	PDR_STAT_CUBE,
-	PDR_STAT_TOTAL,
-	PDR_STAT_ERROR,
-	PDR_STAT_ALL
+	PDR_STAT_STIMU,
+	PDR_STAT_TOTAL
 };
+
+inline size_t getPdrStatMask(PdrStatType pst) { return size_t(1) << pst; }
+inline bool isPdrStatON(size_t stats, PdrStatType pst) { return stats & getPdrStatMask(pst); }
 
 enum PdrVerboseType
 {
@@ -86,11 +90,31 @@ enum PdrVerboseType
 	PDR_VERBOSE_INF,
 	PDR_VERBOSE_MISC,
 	PDR_VERBOSE_FINAL,
-	PDR_VERBOSE_TOTAL
+	PDR_VERBOSE_STIMU,
+	PDR_VERBOSE_TOTAL,
+	PDR_VERBOSE_FRAME = PDR_VERBOSE_TOTAL
 };
+
+inline size_t getPdrVbsMask(PdrVerboseType pvt) { return size_t(1) << pvt; }
 
 extern const string pdrStatStr[PDR_STAT_TOTAL];
 extern const string pdrVerboseStr[PDR_VERBOSE_TOTAL];
+
+enum PdrResultType
+{
+	PDR_RESULT_SAT,
+	PDR_RESULT_UNSAT,
+	PDR_RESULT_ABORT_FRAME,
+	PDR_RESULT_ABORT_RES
+};
+
+enum PdrStimuType
+{
+	PDR_STIMU_LOCAL_INF,
+	PDR_STIMU_LOCAL_ALL,
+	PDR_STIMU_LOCAL_MIX,
+	PDR_STIMU_NONE
+};
 
 class PdrTerSimStat : public Stat<3, 1>
 {
@@ -101,18 +125,20 @@ public:
 	void printStat()const;
 };
 
-class PdrSatStat : public Stat<3, 4>
+class PdrSatStat : public Stat<5, 4>
 {
 public:
 	PdrSatStat()
-	: Stat<3, 4> ()
+	: Stat<5, 4> ()
 	, minSAT_D   (-1)
 	, maxUNSAT_D (0)
 	, maxAbort_D (0) {}
 
 	void setLastTime() { setTime(3); }
+	void incDeciNum(size_t n) { countN(3, n); }
+	void incConfNum(size_t n) { countN(4, n); }
 
-	void printStat()const;
+	void printStat(bool)const;
 
 	void setSD(size_t d) { if(d < minSAT_D)   minSAT_D   = d; }
 	void setUD(size_t d) { if(d > maxUNSAT_D) maxUNSAT_D = d; }
@@ -161,7 +187,8 @@ public:
 	PdrCubeStat()
 	: Stat<8, 1>   ()
 	, maxBadNum    (0)
-	, maxInfClsLen (0) {}
+	, maxInfClsLen (0)
+	, maxTreeSize  (0) {}
 
 	void incSubsumeAddObl()        { countOne(1); }
 	void incSelfSubsumeAddObl()    { countOne(2); }
@@ -172,13 +199,22 @@ public:
 	void incInfLitNum(size_t n) { countN(6, n); }
 	void incInfCubeNum()        { countOne(7); }
 
-	void checkMaxBNum(size_t n) { if(n > maxBadNum) maxBadNum = n; }
-	void checkMaxCLen(size_t n) { if(n > maxInfClsLen) maxInfClsLen = n; }
+	void checkMaxBNum (size_t n) { if(n > maxBadNum)    maxBadNum    = n; }
+	void checkMaxCLen (size_t n) { if(n > maxInfClsLen) maxInfClsLen = n; }
+	void checkMaxTSize(size_t n) { if(n > maxTreeSize)  maxTreeSize  = n; }
 
 	void printStat()const;
 
 protected:
-	size_t  maxBadNum, maxInfClsLen;
+	size_t  maxBadNum, maxInfClsLen, maxTreeSize;
+};
+
+class PdrStimuStat : public Stat<4, 1>
+{
+public:
+	void incInfClsNum(size_t n) { countN(3, n); }
+
+	void printStat()const;
 };
 
 /* The memory alignment of PdrCube
@@ -209,7 +245,8 @@ public:
 	const AigGateLit* begin()const { return uint32Ptr; }
 	const AigGateLit* end  ()const { return uint32Ptr + getSize(); }
 
-	bool operator<(const PdrCube& c)const;
+	bool operator< (const PdrCube&)const;
+	bool operator==(const PdrCube&)const;
 
 	void setSize(size_t s) { *(uint64Ptr - 1) = s; }
 	void setLit(size_t i, AigGateLit lit) { *(uint32Ptr + i) = lit; }
@@ -232,9 +269,17 @@ public:
 	bool isNone()const { return uint32Ptr == 0; }
 	void* getOriPtr()const { return uint64Ptr - 4; }
 
-	AigGateLit subsume(const PdrCube& c)const { return subsumeComplex(c); }
-	AigGateLit subsumeTrivial(const PdrCube&)const;
-	AigGateLit subsumeComplex(const PdrCube&)const;
+	bool subsume(const PdrCube& c)const { return subsumeComplexN(c); }
+	bool subsumeTrivial (const PdrCube&)const;
+	bool subsumeComplexN(const PdrCube&)const;
+	bool subsumeComplexB(const PdrCube&)const;
+
+	AigGateLit selfSubsume(const PdrCube& c)const { return selfSubsumeComplex(c); }
+	AigGateLit selfSubsumeTrivial(const PdrCube&)const;
+	AigGateLit selfSubsumeComplex(const PdrCube&)const;
+
+	PdrCube exactOneDiff(const PdrCube&)const;
+	bool    exactOneLess(const PdrCube&)const;
 
 private:
 	union { unsigned* uint32Ptr; size_t* uint64Ptr; PdrCube* cubePtr; };
@@ -257,16 +302,34 @@ private:
 	PdrCube  cube;
 };
 
-class PdrChecker : public SafetyBChecker
+class PdrChecker : public SafetyBNChecker
 {
 public:
-	PdrChecker(AigNtk*, size_t, bool, size_t, size_t, size_t, const Array<bool>&,
+	PdrChecker(AigNtk*, size_t, bool, size_t, size_t, size_t, size_t,
 	           PdrSimType, PdrOrdType, PdrOblType, PdrDeqType, PdrPrpType, PdrGenType,
-	           bool, bool, bool, bool, bool, bool, size_t);
+	           bool, bool, bool, bool, bool, bool, size_t, size_t, bool,
+	           PdrStimuType, size_t, size_t);
 	~PdrChecker();
+
+// For stimulator (Start)
+protected:
+	class PdrStimulator;
+		class PdrStimulatorLocal;
+			class PdrStimulatorLocalInfAll;
+			class PdrStimulatorLocalMix;
+
+	PdrStimulator* getStimulator(PdrStimuType, bool, size_t, size_t);
+	bool mergeInf(const vector<PdrCube>&, bool, const PdrCube&);
+	void disablePrintFrame() { assert(isVerboseON(PDR_VERBOSE_FRAME));
+	                           verbosity &= ~getPdrVbsMask(PDR_VERBOSE_FRAME); }
+	PdrChecker* cloneChecker(size_t)const;
+	const vector<PdrCube>& getInfFrame()const { return frame.back(); }
+	void setTargetCube(const PdrCube& c) { targetCube = c; }
+// For stimulator (End)
 
 protected:
 	void check();
+	PdrResultType checkInt();
 
 protected:
 	vector<AigGateID> genTarget(const PdrCube&)const;
@@ -304,9 +367,9 @@ protected:
 	void activateFrame(size_t)const;
 	PdrCube unsatGen(const PdrCube&)const;
 	size_t findLowestActPlus1(size_t)const;
-	bool isInitial(const vector<AigGateLit>&, size_t = numeric_limits<size_t>::max())const;
-	Var addCurNotState(const vector<AigGateLit>&, size_t = numeric_limits<size_t>::max())const;
-	void addNextState(const vector<AigGateLit>&, size_t = numeric_limits<size_t>::max())const;
+	bool isInitial(const vector<AigGateLit>&, size_t = MAX_SIZE_T)const;
+	Var addCurNotState(const vector<AigGateLit>&, size_t = MAX_SIZE_T)const;
+	void addNextState(const vector<AigGateLit>&, size_t = MAX_SIZE_T)const;
 
 	void printCurFrames(const char*)const;
 	void printRemainObl()const;
@@ -328,22 +391,25 @@ protected:
 	void refineInf();
 	void checkMaxD(size_t d)const { if(d > maxUNSAT_D) maxUNSAT_D = d; }
 	void checkThenPushObl(size_t, const PdrCube&);
-	bool isVerboseON(PdrVerboseType pvt)const { return verbosity & (size_t(1) << pvt); }
-	void printIndInv();
+	bool isVerboseON(PdrVerboseType pvt)const { return verbosity & getPdrVbsMask(pvt); }
+	void checkAndPrintIndInv();
 	size_t getCurRecycleNum()const { return recycleByQuery ? satQueryTime : unusedVarNum; }
-	AigGateLit subsume(const PdrCube&, const PdrCube&)const;
-	void mergeInf(const vector<PdrCube>&);
+	bool subsume(const PdrCube&, const PdrCube&)const;
+	AigGateLit selfSubsume(const PdrCube&, const PdrCube&)const;
+	vector<PdrCube> getCurIndSet(bool)const;
 
 protected:
 	size_t  curFrame;
 	size_t  maxFrame;
+
+	PdrCube         targetCube;
+	PdrStimulator*  stimulator;
 
 	mutable size_t  satQueryTime;
 	mutable size_t  unusedVarNum;
 	const size_t    recycleNum;
 
 	mutable size_t  maxUNSAT_D;
-	mutable size_t  curMinF;
 
 	vector<vector<PdrCube>>  frame;
 	SolverPtr<CirSolver>     solver;
@@ -374,16 +440,22 @@ protected:
 	bool        checkSelf;
 	bool        assertFrame;
 	bool        recycleByQuery;
+	bool        checkIndInv;
 
 	bool            convertInNeedFrame;
 	mutable size_t  frameConverted;
 
 	mutable vector<Lit>  litList;
 
+	mutable size_t  totalSatQuery;
+	const size_t    satQueryLimit;
+	mutable size_t  oblTreeSize;
+mutable size_t numConf, numDeci, maxObl, maxTree;
+
 	size_t  verbosity;
 
-	static constexpr size_t FRAME_NULL = numeric_limits<size_t>::max() - 1;
-	static constexpr size_t FRAME_INF  = numeric_limits<size_t>::max();
+	static constexpr size_t FRAME_NULL = MAX_SIZE_T - 1;
+	static constexpr size_t FRAME_INF  = MAX_SIZE_T;
 
 #ifdef UsePatternCheckSAT
 protected:
@@ -399,8 +471,8 @@ protected:
 	mutable bool                   simResult;
 
 	void checkPatForSat(size_t, const PdrCube&)const;
-	void checkPatForSat(size_t, size_t)         const;
-	void checkPatForSat(size_t)                 const;
+	void checkPatForSat(size_t, size_t)        const;
+	void checkPatForSat(size_t)                const;
 
 	void genDfsList(const PdrCube&)const;
 	void genDfsList(size_t)const;
@@ -411,6 +483,74 @@ protected:
 	void setPattern(size_t)const;
 	void collectPattern()const;
 #endif
+
+#ifdef CheckOblCommonPart
+protected:
+	mutable size_t             numObl;
+	mutable size_t             idxOfLastChange;
+	mutable vector<AigGateLit> commonPart;
+
+	void checkOblCommonPart()const;
+#endif
+};
+
+class PdrChecker::PdrStimulator
+{
+public:
+	PdrStimulator(PdrChecker* c, bool statON)
+	: checker(c), stimuStat(statON) {}
+	virtual ~PdrStimulator();
+
+	virtual bool stimulate(const PdrTCube&) = 0;
+
+	void incInfClsNum(size_t n)
+		{ if(stimuStat.isON()) stimuStat->incInfClsNum(n); }
+
+protected:
+	bool solveCand(const PdrCube&, size_t, const PdrCube&);
+	bool notFailed(const PdrCube& c)const { return notInList(failCubes, c); }
+	void addToFailed(const PdrCube& c) { failCubes.push_back(c); }
+
+protected:
+	PdrChecker*            checker;
+	vector<PdrCube>        failCubes;
+	StatPtr<PdrStimuStat>  stimuStat;
+};
+
+class PdrChecker::PdrStimulatorLocal : public PdrStimulator
+{
+public:
+	PdrStimulatorLocal(PdrChecker* c, bool statON, size_t bn, size_t mn)
+	: PdrStimulator(c, statON), backtrackNum(bn), matchNum(mn) { assert(bn >= mn); }
+
+protected:
+	size_t  backtrackNum;
+	size_t  matchNum;
+};
+
+class PdrChecker::PdrStimulatorLocalInfAll : public PdrStimulatorLocal
+{
+public:
+	PdrStimulatorLocalInfAll(PdrChecker* c, bool statON, size_t bn, size_t mn, bool onlyI)
+	: PdrStimulatorLocal(c, statON, bn, mn), onlyInf(onlyI) {}
+
+	bool stimulate(const PdrTCube&);
+
+protected:
+	bool  onlyInf;
+};
+
+class PdrChecker::PdrStimulatorLocalMix : public PdrStimulatorLocal
+{
+public:
+	PdrStimulatorLocalMix(PdrChecker* c, bool statON, size_t bn, size_t mn)
+	: PdrStimulatorLocal(c, statON, bn, mn), curIdx(0) {}
+
+	bool stimulate(const PdrTCube&);
+
+protected:
+	size_t           curIdx;
+	vector<PdrCube>  clsCache;
 };
 
 #endif

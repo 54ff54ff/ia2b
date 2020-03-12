@@ -11,20 +11,23 @@
 namespace _54ff
 {
 
-SafetyChecker::SafetyChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t timeout)
-: ntk       (ntkToCheck->copyNtk())
-, property  (ntk->getOutputID(outputIdx))
-, trace     (_trace)
-, timeBound (timeout == 0 ? 0 : clock() + (timeout * CLOCKS_PER_SEC))
+SafetyChecker::SafetyChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t timeout,
+                             bool supportB, bool ntkIsC)
+: ntk          (ntkIsC ? ntkToCheck->copyNtk() : ntkToCheck)
+, property     (ntk->getOutputID(outputIdx))
+, trace        (_trace)
+, supportBreak (supportB)
+, ntkIsCopied  (ntkIsC)
+, timeBound    (timeout == 0 ? 0 : clock() + (timeout * CLOCKS_PER_SEC))
 {
-	cout << RepeatChar('=', 36) << endl
-	     << "Network    : " << ntk->ntkName << endl
-	     << "Property   : output " << outputIdx << ", ID " << property << endl
-	     << "Report CEX : " << (trace ? "Yes" : "No") << endl
-	     << "Timeout    : ";
-	if(timeout == 0) cout << "unlimited";
-	else             cout << timeout << " seconds";
-	cout << endl;
+	sfcMsg << RepeatChar('=', 36) << endl
+	       << "Network    : " << ntk->ntkName << endl
+	       << "Property   : output " << outputIdx << ", ID " << property << endl
+	       << "Report CEX : " << (trace ? "Yes" : "No") << endl
+	       << "Timeout    : ";
+	if(timeout == 0) sfcMsg << "unlimited";
+	else             sfcMsg << timeout << " seconds";
+	sfcMsg << endl;
 }
 
 void
@@ -32,7 +35,7 @@ SafetyChecker::Check()
 { 
 	cout << RepeatChar('=', 36) << endl;
 	isIntSent = false;
-	supportBreak = isBreakSupported();
+	supportBreakNow = supportBreak;
 	oldIntHandler = signal(SIGINT, catchIntsignal);
 	check();
 	signal(SIGINT, oldIntHandler);
@@ -43,12 +46,12 @@ SafetyChecker::checkBreakCond()const
 {
 	if(isIntSent)
 	{
-		cout << "\rReceive interruption signal";
+		sfcMsg << "\rReceive interruption signal";
 		return true;
 	}
 	if(timeBound != 0 && clock() >= timeBound)
 	{
-		cout << "\rTimeout";
+		sfcMsg << "\rTimeout";
 		return true;
 	}
 	return false;
@@ -63,9 +66,18 @@ SafetyChecker::buildInit()
 	return ntk->createAnd(initList);
 }
 
+void
+SafetyChecker::catchIntsignal(int)
+{
+	if(!supportBreakNow || isIntSent)
+		{ cout << endl; exit(1); }
+	else isIntSent = true;
+}
+
 void (*SafetyChecker::oldIntHandler)(int) = 0;
 bool SafetyChecker::isIntSent = false;
-bool SafetyChecker::supportBreak = false;
+bool SafetyChecker::supportBreakNow = false;
+CondStream SafetyChecker::sfcMsg(cout);
 
 void
 CombChecker::check()

@@ -19,46 +19,57 @@ namespace _54ff
 class SafetyChecker
 {
 public:
-	SafetyChecker(AigNtk*, size_t, bool, size_t);
-	virtual ~SafetyChecker() { delete ntk; }
+	SafetyChecker(AigNtk*, size_t, bool, size_t, bool, bool);
+	virtual ~SafetyChecker() { if(ntkIsCopied) delete ntk; }
 
 	void Check();
+
+	virtual bool isComb()const { return false; }
 
 	bool checkBreakCond()const;
 
 protected:
 	virtual void check() = 0;
-	virtual bool isBreakSupported()const { return false; }
 
 	AigGateV buildInit();
 
-	static void catchIntsignal(int) { if(!supportBreak || isIntSent) exit(1); else isIntSent = true; }
+	static void catchIntsignal(int);
 	static void (*oldIntHandler)(int);
 
 protected:
 	AigNtk*     ntk;
 	AigGateID   property;
 	bool        trace;
+	bool        supportBreak;
+	bool        ntkIsCopied;
 	clock_t     timeBound;
 
 	static bool  isIntSent;
-	static bool  supportBreak;
+	static bool  supportBreakNow;
+
+	static CondStream  sfcMsg;
 };
 
-class SafetyBChecker : public SafetyChecker
-{
-public:
-	using SafetyChecker::SafetyChecker;
+#define SC_Derived(checkerName, supportB, ntkIsC)                                  \
+class checkerName : public SafetyChecker                                           \
+{                                                                                  \
+public:                                                                            \
+	checkerName(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t timeout) \
+	: SafetyChecker(ntkToCheck, outputIdx, _trace, timeout, supportB, ntkIsC) {}   \
+}
 
-protected:
-	bool isBreakSupported()const { return true; }
-};
+SC_Derived(SafetyBCChecker, true , true );
+SC_Derived(SafetyBNChecker, true , false);
+SC_Derived(SafetyNCChecker, false, true );
+SC_Derived(SafetyNNChecker, false, false);
 
-class CombChecker : public SafetyChecker
+class CombChecker : public SafetyNNChecker
 {
 public:
 	CombChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t timeout)
-	: SafetyChecker(ntkToCheck, outputIdx, _trace, timeout) {}
+	: SafetyNNChecker(ntkToCheck, outputIdx, _trace, timeout) {}
+
+	bool isComb()const { return true; }
 
 protected:
 	void check();

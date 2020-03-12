@@ -179,7 +179,7 @@ AigFraiger::initFecGrp()
 	const size_t I = ntk->getInputNum();
 	const size_t L = ntk->getLatchNum();
 	//To let all the CIs have different pattern
-	const size_t interval = numeric_limits<size_t>::max() / (I + L);
+	const size_t interval = MAX_SIZE_T / (I + L);
 	simValue.init(ntk->getMaxGateNum());
 	FecHash fecHash(dfsList.size() + I + L + 1);
 	simValue[0] = 0, fecHash[0] = new LitVec(1, 0 << 1);

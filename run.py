@@ -439,10 +439,12 @@ methodToParam = \
 	             "./ia2b",
 	             checkIa2bBalance],
 	"AbcPdr" : ["read_aiger {}\n"
+	            "{}\n"
 	            "pdr {}\n"
+	            "{}\n"
 	            "time\n"
 	            "quit\n",
-	            "../LSV/hehe/abc/abc",
+	            "../LSV/hehe/abc/abc_16",
 	            checkAbcMC],
 	"AbcItp" : ["read_aiger {}\n"
 	            "int {}\n"

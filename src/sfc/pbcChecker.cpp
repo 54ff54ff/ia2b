@@ -74,33 +74,33 @@ void delPbcCube(PbcCube* cube)
 
 PbcChecker::PbcChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t timeout, size_t maxF,
                        const Array<bool>& stat, bool _blockState, bool _verbose, const char* reachMethod)
-: SafetyBChecker (ntkToCheck, outputIdx, _trace, timeout)
-, maxFrame       (maxF)
-, blockSolver    (ntk)
-, inducSolver    (ntk)
-, fixedSolver    (ntk)
-, terSimSup      (ntk)
+: SafetyBNChecker (ntkToCheck, outputIdx, _trace, timeout)
+, maxFrame        (maxF)
+, blockSolver     (ntk)
+, inducSolver     (ntk)
+, fixedSolver     (ntk)
+, terSimSup       (ntk)
 
-, terSimStat     (stat[PBC_STAT_TERSIM])
-, blockSatStat   (stat[PBC_STAT_BLOCK_SAT], "blockSolver")
-, inducSatStat   (stat[PBC_STAT_INDUC_SAT], "inducSolver")
-, fixedSatStat   (stat[PBC_STAT_FIXED_SAT], "fixedSolver")
+, terSimStat      (stat[PBC_STAT_TERSIM])
+, blockSatStat    (stat[PBC_STAT_BLOCK_SAT], "blockSolver")
+, inducSatStat    (stat[PBC_STAT_INDUC_SAT], "inducSolver")
+, fixedSatStat    (stat[PBC_STAT_FIXED_SAT], "fixedSolver")
 
-, blockState     (_blockState)
-, verbose        (_verbose)
+, blockState      (_blockState)
+, verbose         (_verbose)
 {
-	cout << "Max Frame  : " << maxFrame << endl
-	     << "Method     : Property directed bounded model checking" << endl
-	     << "Detail     : Compute reachability " << reachMethod << " k steps" << endl;
+	sfcMsg << "Max Frame  : " << maxFrame << endl
+	       << "Method     : Property directed bounded model checking" << endl
+	       << "Detail     : Compute reachability " << reachMethod << " k steps" << endl;
 	if(blockState)
-		cout << "             Add blocked cubes back to blockSolver" << endl;
+		sfcMsg << "             Add blocked cubes back to blockSolver" << endl;
 	size_t numStatActive = 0;
 	for(unsigned i = 0; i < PBC_STAT_TOTAL; ++i)
 		if(stat[i])
-			cout << "             "
-			     << (numStatActive++ == 0 ? "Toggle verbose output for "
-			                              : "                          ")
-			     << "- " << pbcStatStr[i] << endl;
+			sfcMsg << "             "
+			       << (numStatActive++ == 0 ? "Toggle verbose output for "
+			                                : "                          ")
+			       << "- " << pbcStatStr[i] << endl;
 
 	/* Prepare for ternary simulation */
 	genCube.reserve(ntk->getLatchNum());
@@ -607,29 +607,29 @@ PbcUChecker::addStateFixed(PbcCube* c)const
 
 PbcIChecker::PbcIChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t timeout, size_t maxF,
                        const Array<bool>& stat, bool _verbose)
-: SafetyBChecker (ntkToCheck, outputIdx, _trace, timeout)
-, maxFrame       (maxF)
-, blkIndSolver   (ntk)
-, fixedSolver    (ntk)
-, terSimSup      (ntk)
+: SafetyBNChecker (ntkToCheck, outputIdx, _trace, timeout)
+, maxFrame        (maxF)
+, blkIndSolver    (ntk)
+, fixedSolver     (ntk)
+, terSimSup       (ntk)
 
-, terSimStat     (stat[PBC_STAT_TERSIM])
-, blockSatStat   (stat[PBC_STAT_BLOCK_SAT], "blkIndSolver (block part)")
-, inducSatStat   (stat[PBC_STAT_INDUC_SAT], "blkIndSolver (induc part)")
-, fixedSatStat   (stat[PBC_STAT_FIXED_SAT], "fixedSolver")
+, terSimStat      (stat[PBC_STAT_TERSIM])
+, blockSatStat    (stat[PBC_STAT_BLOCK_SAT], "blkIndSolver (block part)")
+, inducSatStat    (stat[PBC_STAT_INDUC_SAT], "blkIndSolver (induc part)")
+, fixedSatStat    (stat[PBC_STAT_FIXED_SAT], "fixedSolver")
 
-, verbose        (_verbose)
+, verbose         (_verbose)
 {
-	cout << "Max Frame  : " << maxFrame << endl
-	     << "Method     : Property directed bounded model checking" << endl
-	     << "Detail     : Compute reachability at k steps, block increasingly" << endl;
+	sfcMsg << "Max Frame  : " << maxFrame << endl
+	       << "Method     : Property directed bounded model checking" << endl
+	       << "Detail     : Compute reachability at k steps, block increasingly" << endl;
 	size_t numStatActive = 0;
 	for(unsigned i = 0; i < PBC_STAT_TOTAL; ++i)
 		if(stat[i])
-			cout << "             "
-			     << (numStatActive++ == 0 ? "Toggle verbose output for "
-			                              : "                          ")
-			     << "- " << pbcStatStr[i] << endl;
+			sfcMsg << "             "
+			       << (numStatActive++ == 0 ? "Toggle verbose output for "
+			                                : "                          ")
+			       << "- " << pbcStatStr[i] << endl;
 
 	/* Prepare for ternary simulation */
 	genCube.reserve(ntk->getLatchNum());

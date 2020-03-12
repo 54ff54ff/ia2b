@@ -74,7 +74,7 @@ private:
 	AigGateLit  lit[0];
 };
 
-class PbcChecker : public SafetyBChecker
+class PbcChecker : public SafetyBNChecker
 {
 public:
 	PbcChecker(AigNtk*, size_t, bool, size_t, size_t, const Array<bool>&, bool, bool, const char*);
@@ -175,7 +175,7 @@ protected:
 	void addStateFixed(PbcCube*)const;
 };
 
-class PbcIChecker : public SafetyBChecker
+class PbcIChecker : public SafetyBNChecker
 {
 public:
 	PbcIChecker(AigNtk*, size_t, bool, size_t, size_t, const Array<bool>&, bool);

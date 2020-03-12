@@ -27,7 +27,7 @@ CmdClass(ItpCheck, CMD_TYPE_VERIFICATION, 5, "-TRace",   3,
                                              "-All",     2,
                                              "-Last",    2,
                                              "-TImeout", 3);
-CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 24, "-TRace",     3,
+CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 28, "-TRace",     3,
                                               "-Max",       2,
                                               "-EVent",     3,
                                               "-Backward",  2,
@@ -49,8 +49,12 @@ CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 24, "-TRace",     3,
                                               "-NEEDCone",  6,
                                               "-SElf",      3,
                                               "-ASsert",    3,
-                                              "-Called",    2,
-                                              "-NEEDFrame", 6);
+                                              "-CAlled",    3,
+                                              "-NEEDFrame", 6,
+                                              "-CHeck",     3,
+                                              "-LOCALInf",  7,
+                                              "-LOCALAll",  7,
+                                              "-LOCALMix",  7);
 CmdClass(PbcCheck, CMD_TYPE_VERIFICATION, 9, "-TRace",     3,
                                              "-Max",       2,
                                              "-Stat",      2,
@@ -332,14 +336,16 @@ ItpCheckCmd::getHelpStr()const
 	CHEck SAfety PDr <(unsigned outputIdx)> [-TRace]
 	                 [-TImeout (unsigned timeout)]
 	                 [-Max (unsigned maxFrame)]
-	                 [<-RECycle (unsigned recycleNum)> [-Called]]
+	                 [<-RECycle (unsigned recycleNum)> [-CAlled]]
 	                 [-EVent | -Backward | -INTernal]
 	                 [-NEEDCone] [-NEEDFrame]
 	                 [<-ACtivity | -Decay> [-REVerse]] [-SElf]
 	                 [-Push | -NOPush] [-Queue]
 	                 [-APPROXGen | -NOGen]
 	                 [-EAger] [-INFinite] [-ASsert]
-	                 [-STat ("atsgprc")] [-Verbose ("aogpbtcimf")]
+	                 [-STat ("atsgprcx")] [-Verbose ("aogpbtcimfx")]
+	                 [<-LOCALInf | -LOCALAll | -LOCALMix> ((unsigned) backtrackNum matchNum)]
+                     [-CHeck]
 --------------------------------------------------------------------------
 	0:  -TRace,     3
 	1:  -Max,       2
@@ -363,8 +369,12 @@ ItpCheckCmd::getHelpStr()const
 	19: -NEEDCone,  6
 	20: -SElf,      3
 	21: -ASsert,    3
-	22: -Called,    2
+	22: -CAlled,    3
 	23: -NEEDFrame, 6
+	24: -CHeck,     3
+	25: -LOCALInf,  7
+	26: -LOCALAll,  7
+	27: -LOCALMix,  7
 ========================================================================*/
 
 CmdExecStatus
@@ -387,7 +397,7 @@ PdrCheckCmd::exec(char* options)const
 	size_t recycleNum = 0;
 	bool customRecycle = false;
 
-	PdrSimType pst  = PDR_SIM_FORWARD_NORMAL;
+	PdrSimType psit = PDR_SIM_FORWARD_NORMAL;
 	PdrOrdType port = PDR_ORD_INDEX;
 	PdrOblType pobt = PDR_OBL_NORMAL;
 	PdrDeqType pdt  = PDR_DEQ_STACK;
@@ -400,12 +410,14 @@ PdrCheckCmd::exec(char* options)const
 	bool recycleBQ = false;
 	bool cInNeedF  = false;
 
-	bool statON = false;
-	Array<bool> stat(PDR_STAT_TOTAL);
-	for(unsigned i = 0; i < PDR_STAT_TOTAL; ++i)
-		stat[i] = false;
-
+	size_t stats     = 0;
 	size_t verbosity = 0;
+	bool   checkII   = false;
+
+	size_t satQL = 0;
+
+	PdrStimuType pstt = PDR_STIMU_NONE;
+	size_t stimuNum1, stimuNum2;
 
 	for(size_t i = 1, n = tokens.size(); i < n; ++i)
 		if(optMatch<0>(tokens[i]))
@@ -426,21 +438,21 @@ PdrCheckCmd::exec(char* options)const
 		}
 		else if(optMatch<2>(tokens[i]))
 		{
-			if(pst != PDR_SIM_FORWARD_NORMAL)
+			if(psit != PDR_SIM_FORWARD_NORMAL)
 				return errorOption(CMD_OPT_EXTRA, tokens[i]);
-			pst = PDR_SIM_FORWARD_EVENT;
+			psit = PDR_SIM_FORWARD_EVENT;
 		}
 		else if(optMatch<3>(tokens[i]))
 		{
-			if(pst != PDR_SIM_FORWARD_NORMAL)
+			if(psit != PDR_SIM_FORWARD_NORMAL)
 				return errorOption(CMD_OPT_EXTRA, tokens[i]);
-			pst = PDR_SIM_BACKWARD_NORMAL;
+			psit = PDR_SIM_BACKWARD_NORMAL;
 		}
 		else if(optMatch<4>(tokens[i]))
 		{
-			if(pst != PDR_SIM_FORWARD_NORMAL)
+			if(psit != PDR_SIM_FORWARD_NORMAL)
 				return errorOption(CMD_OPT_EXTRA, tokens[i]);
-			pst = PDR_SIM_BACKWARD_INTERNAL;
+			psit = PDR_SIM_BACKWARD_INTERNAL;
 		}
 		else if(optMatch<5>(tokens[i]))
 		{
@@ -483,45 +495,32 @@ PdrCheckCmd::exec(char* options)const
 		}
 		else if(optMatch<11>(tokens[i]))
 		{
-			if(statON)
+			if(stats != 0)
 				return errorOption(CMD_OPT_EXTRA, tokens[i]);
 			if(++i == n)
 				return errorOption(CMD_OPT_MISSING);
 			char buffer[2] = { 0, 0 };
 			for(const char* tmp = tokens[i]; *tmp != 0; ++tmp)
 			{
-				PdrStatType pstt;
+				size_t sMask;
 				switch(*tmp)
 				{
-					case 'a' : pstt = PDR_STAT_ALL;        break;
-					case 't' : pstt = PDR_STAT_TERSIM;     break;
-					case 's' : pstt = PDR_STAT_SAT;        break;
-					case 'g' : pstt = PDR_STAT_GENERALIZE; break;
-					case 'p' : pstt = PDR_STAT_PROPAGATE;  break;
-					case 'r' : pstt = PDR_STAT_RECYCLE;    break;
-					case 'c' : pstt = PDR_STAT_CUBE;       break;
-					default  : pstt = PDR_STAT_ERROR;      break;
-				}
-				switch(pstt)
-				{
-					case PDR_STAT_ALL:
-						for(unsigned i = 0; i < PDR_STAT_TOTAL; ++i)
-							if(stat[i])
-								{ buffer[0] = *tmp; return errorOption(CMD_OPT_EXTRA, buffer); }
-							else stat[i] = true;
-						break;
-
-					case PDR_STAT_ERROR:
+					case 'a' : sMask = getPdrStatMask(PDR_STAT_TOTAL) - 1;  break;
+					case 't' : sMask = getPdrStatMask(PDR_STAT_TERSIM);     break;
+					case 's' : sMask = getPdrStatMask(PDR_STAT_SAT);        break;
+					case 'g' : sMask = getPdrStatMask(PDR_STAT_GENERALIZE); break;
+					case 'p' : sMask = getPdrStatMask(PDR_STAT_PROPAGATE);  break;
+					case 'r' : sMask = getPdrStatMask(PDR_STAT_RECYCLE);    break;
+					case 'c' : sMask = getPdrStatMask(PDR_STAT_CUBE);       break;
+					case 'x' : sMask = getPdrStatMask(PDR_STAT_STIMU);      break;
+					default  :
 						buffer[0] = *tmp;
 						return errorOption(CMD_OPT_ILLEGAL, buffer);
-
-					default:
-						if(stat[pstt])
-							{ buffer[0] = *tmp; return errorOption(CMD_OPT_EXTRA, buffer); }
-						else stat[pstt] = true;
 				}
+				if((stats & sMask) != 0)
+					{ buffer[0] = *tmp; return errorOption(CMD_OPT_EXTRA, buffer); }
+				stats |= sMask;
 			}
-			statON = true;
 		}
 		else if(optMatch<12>(tokens[i]))
 		{
@@ -551,16 +550,17 @@ PdrCheckCmd::exec(char* options)const
 				size_t vMask;
 				switch(*tmp)
 				{
-					case 'a' : vMask = (size_t(1) << PDR_VERBOSE_TOTAL) - 1; break;
-					case 'o' : vMask =  size_t(1) << PDR_VERBOSE_OBL;        break;
-					case 'g' : vMask =  size_t(1) << PDR_VERBOSE_GEN;        break;
-					case 'p' : vMask =  size_t(1) << PDR_VERBOSE_PROP;       break;
-					case 'b' : vMask =  size_t(1) << PDR_VERBOSE_BLK;        break;
-					case 't' : vMask =  size_t(1) << PDR_VERBOSE_TERSIM;     break;
-					case 'c' : vMask =  size_t(1) << PDR_VERBOSE_CUBE;       break;
-					case 'i' : vMask =  size_t(1) << PDR_VERBOSE_INF;        break;
-					case 'm' : vMask =  size_t(1) << PDR_VERBOSE_MISC;       break;
-					case 'f' : vMask =  size_t(1) << PDR_VERBOSE_FINAL;      break;
+					case 'a' : vMask = getPdrVbsMask(PDR_VERBOSE_TOTAL) - 1; break;
+					case 'o' : vMask = getPdrVbsMask(PDR_VERBOSE_OBL);       break;
+					case 'g' : vMask = getPdrVbsMask(PDR_VERBOSE_GEN);       break;
+					case 'p' : vMask = getPdrVbsMask(PDR_VERBOSE_PROP);      break;
+					case 'b' : vMask = getPdrVbsMask(PDR_VERBOSE_BLK);       break;
+					case 't' : vMask = getPdrVbsMask(PDR_VERBOSE_TERSIM);    break;
+					case 'c' : vMask = getPdrVbsMask(PDR_VERBOSE_CUBE);      break;
+					case 'i' : vMask = getPdrVbsMask(PDR_VERBOSE_INF);       break;
+					case 'm' : vMask = getPdrVbsMask(PDR_VERBOSE_MISC);      break;
+					case 'f' : vMask = getPdrVbsMask(PDR_VERBOSE_FINAL);     break;
+					case 'x' : vMask = getPdrVbsMask(PDR_VERBOSE_STIMU);     break;
 					default  :
 						buffer[0] = *tmp;
 						return errorOption(CMD_OPT_ILLEGAL, buffer);
@@ -630,11 +630,70 @@ PdrCheckCmd::exec(char* options)const
 				return errorOption(CMD_OPT_EXTRA, tokens[i]);
 			cInNeedF = true;
 		}
+		else if(optMatch<24>(tokens[i]))
+		{
+			if(checkII)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			checkII = true;
+		}
+		else if(optMatch<25>(tokens[i]))
+		{
+			if(pstt != PDR_STIMU_NONE)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], stimuNum1))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], stimuNum2))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(stimuNum1 < stimuNum2) {
+				cerr << "[Error] backtrackNum (" << stimuNum1 << ") is smaller than "
+				     << "matchNum (" << stimuNum2 << ")!" << endl; return CMD_EXEC_ERROR_EXT; }
+			pstt = PDR_STIMU_LOCAL_INF;
+		}
+		else if(optMatch<26>(tokens[i]))
+		{
+			if(pstt != PDR_STIMU_NONE)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], stimuNum1))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], stimuNum2))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(stimuNum1 < stimuNum2) {
+				cerr << "[Error] backtrackNum (" << stimuNum1 << ") is smaller than "
+				     << "matchNum (" << stimuNum2 << ")!" << endl; return CMD_EXEC_ERROR_EXT; }
+			pstt = PDR_STIMU_LOCAL_ALL;
+		}
+		else if(optMatch<27>(tokens[i]))
+		{
+			if(pstt != PDR_STIMU_NONE)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], stimuNum1))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], stimuNum2))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(stimuNum1 < stimuNum2) {
+				cerr << "[Error] backtrackNum (" << stimuNum1 << ") is smaller than "
+				     << "matchNum (" << stimuNum2 << ")!" << endl; return CMD_EXEC_ERROR_EXT; }
+			pstt = PDR_STIMU_LOCAL_MIX;
+		}
 		else return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
 	if(!checkNtk()) return CMD_EXEC_ERROR_INT;
-	SafetyChecker* checker = getChecker<PdrChecker>(aigNtk, outputIdx, trace, timeout, maxFrame, recycleNum, stat,
-	                                                pst, port, pobt, pdt, ppt, pgt,
-	                                                rInf, cInNeedC, cSelf, assertF, recycleBQ, cInNeedF, verbosity);
+	SafetyChecker* checker = getChecker<PdrChecker>(aigNtk, outputIdx, trace, timeout, maxFrame, recycleNum, stats,
+	                                                psit, port, pobt, pdt, ppt, pgt,
+	                                                rInf, cInNeedC, cSelf, assertF, recycleBQ, cInNeedF,
+	                                                satQL, verbosity, checkII,
+	                                                pstt, stimuNum1, stimuNum2);
 	if(checker == 0) return CMD_EXEC_ERROR_INT;
 	checker->Check(); delete checker; return CMD_EXEC_DONE;
 }
@@ -645,14 +704,16 @@ PdrCheckCmd::getUsageStr()const
 	return "<(unsigned outputIdx)> [-Trace]\n"
 	       "[-TImeout (unsigned timeout)]\n"
            "[-Max (unsigned maxFrame)]\n"
-	       "[<-RECycle (unsigned recycleNum)> [-Called]]\n"
+	       "[<-RECycle (unsigned recycleNum)> [-CAlled]]\n"
            "[-EVent | -Backward | -INTernal]\n"
 	       "[-NEEDCone] [-NEEDFrame]\n"
 	       "[<-ACtivity | -Decay> [-REVerse]] [-SElf]\n"
 	       "[-Push | -NOPush] [-Queue]\n"
 	       "[-APPROXGen | -NOGen]\n"
 	       "[-EAger] [-INFinite] [-ASsert]\n"
-	       "[-STat (\"atsgprc\")] [-Verbose (\"aogpbtcimf\")]\n";
+	       "[-STat (\"atsgprcx\")] [-Verbose (\"aogpbtcimfx\")]\n"
+	       "[<-LOCALInf | -LOCALAll | -LOCALMix> ((unsigned) backtrackNum matchNum)]\n"
+	       "[-CHeck]\n";
 }
 
 const char*

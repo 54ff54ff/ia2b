@@ -174,9 +174,9 @@ AigGate::printFanInConeRec(unsigned curLevel, unsigned maxLevel, bool bound, boo
 	if(curLevel == maxLevel) { cout << endl; return; }
 	if(isGlobalRef())
 		{ if(getFanInNum() != 0) cout << " (*)"; cout << endl; return; }
-	else setToGlobalRef();
 	cout << endl;
 	if(bound && isCI() && curLevel != 0) return;
+	setToGlobalRef();
 	for(size_t i = 0; i < getFanInNum(); ++i)
 		getFanInPtr(i)->printFanInConeRec(curLevel+1, maxLevel, bound, isFanInInv(i));
 }

@@ -113,6 +113,8 @@ bool isValidVarName(const char*);
 
 /*====================================*/
 
+constexpr size_t MAX_SIZE_T = numeric_limits<size_t>::max();
+
 template<class IntType>
 bool myStrToInt(const char* str, IntType& num)
 {
@@ -203,14 +205,11 @@ public:
 	, padding  (calDigit(maxNum))
 	, counter  (begin) {}
 
-	~Progresser() { delete []prompt; cout << endl; }
+	~Progresser() { delete []prompt; }
 
 	void cleanCurLine()const;
 	void printLine()const;
 	void count(size_t = 1);
-
-private:
-	static void repeatChar(size_t n, char c) { while(n-- > 0) cout << c; }
 
 private:
 	const char* const  prompt;

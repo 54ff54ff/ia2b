@@ -38,7 +38,6 @@ CmdMap::regCmd(CmdExec* e, const Array<size_t>& mandLens, size_t mandNum)
 	}
 
 	CmdNode* node = &cmdTreeRoot;
-	constexpr size_t MAX_SIZE_T = numeric_limits<size_t>::max();
 	size_t startIdx = cmdTreeRoot.getCmdNum() == 0 ? 0 : MAX_SIZE_T;
 	size_t matchIdx = 0;
 	auto noTokenDiff = [e, failToReg]
@@ -195,7 +194,6 @@ CmdMap::CmdNode::findMatchCmd(const char* curToken)const->matchRange
 size_t
 CmdMap::CmdNode::checkAmbiguity(const char* cmdStr, size_t matchNum)const
 {
-	constexpr size_t MAX_SIZE_T = numeric_limits<size_t>::max();
 	size_t lo = 0;
 	size_t hi = getCmdNum();
 	size_t len = 0;

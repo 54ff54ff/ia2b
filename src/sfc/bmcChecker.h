@@ -18,7 +18,7 @@ enum BmcCheckType
 	BMC_ONLY_LAST
 };
 
-class BmcChecker : public SafetyChecker
+class BmcChecker : public SafetyNCChecker
 {
 public:
 	BmcChecker(AigNtk*, size_t, bool, size_t, size_t, BmcCheckType);
@@ -39,7 +39,7 @@ enum IndCheckType
 	IND_SIMPLE_ALL
 };
 
-class IndChecker : public SafetyChecker
+class IndChecker : public SafetyNCChecker
 {
 public:
 	IndChecker(AigNtk*, size_t, bool, size_t, size_t, IndCheckType);
@@ -60,7 +60,7 @@ enum ItpCheckType
 	ITP_ONLY_LAST
 };
 
-class ItpChecker : public SafetyChecker
+class ItpChecker : public SafetyNCChecker
 {
 public:
 	ItpChecker(AigNtk*, size_t, bool, size_t, size_t, ItpCheckType);

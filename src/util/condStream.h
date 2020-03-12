@@ -18,7 +18,30 @@ namespace _54ff
 {
 
 class CondStream
-{};
+{
+
+template<class T>
+friend CondStream& operator<<(CondStream& cs, const T& t)
+	{ if(cs.active) cs.os << t; return cs; }
+
+using Manipulator = ostream&(*)(ostream&);
+friend CondStream& operator<<(CondStream& cs, Manipulator m)
+	{ if(cs.active) cs.os << m; return cs; }
+
+public:
+	CondStream(ostream& o, bool a = true)
+	: os(o), active(a) {}
+
+	bool isActive()const { return active; }
+
+	void   setActive() { active = true; }
+	void unsetActive() { active = false; }
+	void  flipActive() { active = !active; }
+
+private:
+	ostream&  os;
+	bool      active;
+};
 
 class RepeatChar
 {
