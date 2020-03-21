@@ -58,7 +58,7 @@ CmdMgr::printPrompt()const
 void
 CmdMgr::prepareForCmd_byHand()
 {
-	check();
+//	check();
 	printPrompt();
 	*(cmdEnd = cursor = cmdBeg) = char(SPACE); resetHLBegin();
 	curHisIdx = history.size(); addDummyToHistory();
@@ -73,7 +73,7 @@ CmdMgr::execOneCmd_byHand()
 		switch(Key curKeyPress = returnExactKey(); curKeyPress)
 		{
 			default: if(isPrint(curKeyPress)) insertStr(curKeyPress); break;
-			case ENTER          : return pressEnter();
+			case ENTER          : setToOld(); return pressEnter();
 			case UP             : retrieveHistory(curHisIdx-1); break;
 			case DOWN           : retrieveHistory(curHisIdx+1); break;
 			case RIGHT          : moveToRhtOneStep(); break;
@@ -90,7 +90,7 @@ CmdMgr::execOneCmd_byHand()
 			case CTRL_LEFT      : moveToLftWithHLToSide(); break;
 			case PAGEUP         : retrieveHistory(curHisIdx - PG_OFFSET); break;
 			case PAGEDOWN       : retrieveHistory(curHisIdx + PG_OFFSET); break;
-			case ESC            : return pressESC();
+			case ESC            : setToOld(); return pressESC();
 			case TAB            : pressTab(tabCounter==tabRef); tabRef = tabCounter + 1; break;
 			case CTRL_A         : selectAll(); break;
 			case CTRL_X         : cut();       break;
@@ -99,8 +99,8 @@ CmdMgr::execOneCmd_byHand()
 			case CTRL_Z         : raise(SIGTSTP); break;
 			case CTRL_Q         : raise(SIGINT ); break;
 			case CTRL_BACKSLASH : raise(SIGQUIT); break;
-			case CTRL_D         : return pressInputEnd();
-			case CTRL_U         : printUsage(); break;
+			case CTRL_D         : setToOld(); return pressInputEnd();
+			case CTRL_U         : setToOld(); printUsage(); break;
 			case CTRL_K         : flipEnable(); break;
 		}
 }

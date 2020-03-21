@@ -55,7 +55,7 @@ ttySetting::getOneChar(bool combo)
 	cin.  setf(ios_base::skipws);
 //	cout.flush();
 //	ssize_t actual = read(STDIN_FILENO, &ch, 1);
-	setToOld();
+//	setToOld(); If setToOld here, some undesirable characters will be printed out if the keypress is too frequent
 	waitNow = false;
 //	return actual ? ch : 0;
 	return cin.fail() ? cin.clear(), 0 : ch;
@@ -71,7 +71,7 @@ Menu(const char* question, const char* options[], size_t numOpt, const char* sep
 	//3. The end of question should contain proper separator like space or newline
 	auto  forward = [](const char* str) { for(; *str != 0; ++str) cout << *str; };
 	auto backward = [](const char* str) { for(; *str != 0; ++str) cout << '\b'; };
-	check();
+//	check();
 	if(tutorial)
 		cout << "(Please press left/right arrow to select...)\n";
 	forward(question);

@@ -62,7 +62,7 @@ void
 PdrSatStat::printStat(bool useApprox)const
 {
 	cout << RepeatChar('=', 72) << endl;
-	if(getNum(0) + getNum(1) == 0)
+	if(getNum(0) + getNum(1) + getNum(2) == 0)
 		cout << "No SAT query!" << endl;
 	else
 	{
@@ -79,11 +79,11 @@ PdrSatStat::printStat(bool useApprox)const
 		     << "Total runtime     = " << getTotalTime(1) +
 		                                  getTotalTime(0) +
 		                                  getTotalTime(2)                   << " s" << endl
-		     << "Last solving time = " << getTotalTime(3)                   << " s" << endl
-		     << "Min   SAT decision = " << minSAT_D   << endl
-		     << "Max UNSAT decision = " << maxUNSAT_D << endl
-		     << "Max Abort decision = " << maxAbort_D << endl
-		     << "Average number of decision per query = " << double(getNum(3)) / (getNum(1) + getNum(0) + getNum(2)) << endl
+		     << "Last solving time = " << getTotalTime(3)                   << " s" << endl;
+		cout << "Min   SAT decision = "; if(getNum(1) != 0) cout << minSAT_D;   else cout << "None"; cout << endl;
+		cout << "Max UNSAT decision = "; if(getNum(0) != 0) cout << maxUNSAT_D; else cout << "None"; cout << endl;
+		cout << "Max Abort decision = "; if(getNum(2) != 0) cout << maxAbort_D; else cout << "None"; cout << endl;
+		cout << "Average number of decision per query = " << double(getNum(3)) / (getNum(1) + getNum(0) + getNum(2)) << endl
 		     << "Average number of conflict per query = " << double(getNum(4)) / (getNum(1) + getNum(0) + getNum(2)) << endl
 		     << setprecision(ss);
 	}
@@ -161,29 +161,35 @@ PdrCubeStat::printStat()const
 	     << setprecision(1)
 	     << "Total number of cubes added to frame Inf   = " << getNum(7)                     << endl;
 	cout << "Average length of cubes added to frame Inf = ";
-	if(getNum(7) != 0) cout << double(getNum(6)) / getNum(7); else cout << "None";       cout << endl;
-	cout << "Maximum length of cubes added to frame Inf = " << maxInfClsLen                  << endl
-	     << setprecision(ss);
+	if(getNum(7) != 0) cout << double(getNum(6)) / getNum(7); else cout << "None";      cout << endl;
+	cout << "Maximum length of cubes added to frame Inf = ";
+	if(getNum(7) != 0) cout << maxInfClsLen;                  else cout << "None";      cout << endl;
+	cout << setprecision(ss);
 }
 
 void
 PdrStimuStat::printStat()const
 {
-	streamsize ss = cout.precision();
-	cout << RepeatChar('=', 72) << endl
-	     << fixed << setprecision(3)
-	     << "Runtime on stimulation = " << getTotalTime() << " s" << endl
-	     << "#PASS = " << getNum(0) << ", #FAIL = " << getNum(1) << ", #ABORT = " << getNum(2)
-	     << ", #Total = " << getNum(0) + getNum(1) + getNum(2) << endl
-	     << "Number of clauses added to frame Inf = " << getNum(3) << endl
-	     << setprecision(ss);
+	cout << RepeatChar('=', 72) << endl;
+	if(getNum(0) + getNum(1) + getNum(2) == 0)
+		cout << "No stimulation!" << endl;
+	else
+	{
+		streamsize ss = cout.precision();
+		cout << fixed << setprecision(3)
+		     << "Runtime on stimulation = " << getTotalTime() << " s" << endl
+		     << "#PASS = " << getNum(0) << ", #FAIL = " << getNum(1) << ", #ABORT = " << getNum(2)
+		     << ", #Total = " << getNum(0) + getNum(1) + getNum(2) << endl
+		     << "Number of clauses added to frame Inf = " << getNum(3) << endl
+		     << setprecision(ss);
+	}
 }
 
 ostream& operator<<(ostream& os, const PdrCube& c)
 {
 	os << "Size = " << c.getSize()
 	   << ", Lit =";
-	for(size_t i = 0; i < c.getSize(); ++i)
+	for(unsigned i = 0; i < c.getSize(); ++i)
 	{
 		os << " ";
 		if(isInv(c.getLit(i))) os << "!";
@@ -192,20 +198,20 @@ ostream& operator<<(ostream& os, const PdrCube& c)
 	return os;
 }
 
-PdrCube::PdrCube(const vector<unsigned>& litList, bool toSort)
+PdrCube::PdrCube(const vector<AigGateLit>& litList, bool toSort)
 {
-	const size_t s = litList.size();
+	const unsigned s = litList.size();
 	uint32Ptr = (unsigned*)operator new(sizeof(unsigned) * s +
-	                                    sizeof(size_t)   * 4);
-	uint64Ptr += 4;
+	                                    sizeof(size_t)   * 3);
+	uint64Ptr += 3;
 	initCount();
 	setSize(s);
 	initAbstract();
-	for(size_t i = 0; i < s; ++i)
+	for(unsigned i = 0; i < s; ++i)
 		setLit(i, litList[i]), calAbstract(i);
 	if(toSort)
 		sort(uint32Ptr, uint32Ptr + s);
-	for(size_t i = 1; i < s; ++i)
+	for(unsigned i = 1; i < s; ++i)
 		assert(getLit(i-1) < getLit(i));
 	incCount();
 }
@@ -213,7 +219,7 @@ PdrCube::PdrCube(const vector<unsigned>& litList, bool toSort)
 bool
 PdrCube::operator<(const PdrCube& c)const
 {
-	for(size_t i = 0; i < getSize(); ++i)
+	for(unsigned i = 0; i < getSize(); ++i)
 	{
 		if(i == c.getSize())
 			return false;
@@ -230,7 +236,7 @@ PdrCube::operator==(const PdrCube& c)const
 	if(getAbs() != c.getAbs() ||
 	   getSize() != c.getSize())
 		return false;
-	for(size_t i = 0; i < getSize(); ++i)
+	for(unsigned i = 0; i < getSize(); ++i)
 		if(getLit(i) != c.getLit(i))
 			return false;
 	return true;
@@ -242,10 +248,10 @@ PdrCube::operator==(const PdrCube& c)const
 bool
 PdrCube::subsumeTrivial(const PdrCube& c)const
 {
-	for(size_t i = 0; i < getSize(); ++i)
+	for(unsigned i = 0; i < getSize(); ++i)
 	{
 		bool match = false;
-		for(size_t j = 0; j < c.getSize(); ++j)
+		for(unsigned j = 0; j < c.getSize(); ++j)
 			if(getLit(i) == c.getLit(j))
 				{ match = true; break; }
 		if(!match) return false;
@@ -259,7 +265,7 @@ PdrCube::subsumeComplexN(const PdrCube& c)const
 	if((getAbs() & ~c.getAbs()) != 0 ||
 	   getSize() > c.getSize())
 		return false;
-	for(size_t i = 0, j = 0; i < getSize(); ++i, ++j)
+	for(unsigned i = 0, j = 0; i < getSize(); ++i, ++j)
 	{
 		for(; j < c.getSize(); ++j)
 			if(getLit(i) == c.getLit(j))
@@ -278,12 +284,12 @@ PdrCube::subsumeComplexB(const PdrCube& c)const
 	if((getAbs() & ~c.getAbs()) != 0 ||
 	   getSize() > c.getSize())
 		return false;
-	size_t _lo = 0;
-	for(size_t i = 0; i < getSize(); ++i)
+	unsigned _lo = 0;
+	for(unsigned i = 0; i < getSize(); ++i)
 	{
-		size_t lo = _lo;
-		size_t hi = c.getSize();
-		size_t mid;
+		unsigned lo = _lo;
+		unsigned hi = c.getSize();
+		unsigned mid;
 		while(lo < hi)
 			if(int diff = c.getLit(mid=(lo+hi)/2) - getLit(i);
 			   diff == 0) { _lo = mid + 1; goto OK; }
@@ -307,10 +313,10 @@ AigGateLit
 PdrCube::selfSubsumeTrivial(const PdrCube& c)const
 {
 	AigGateLit ret = UNDEF_GATELIT;
-	for(size_t i = 0; i < getSize(); ++i)
+	for(unsigned i = 0; i < getSize(); ++i)
 	{
 		bool match = false;
-		for(size_t j = 0; j < c.getSize(); ++j)
+		for(unsigned j = 0; j < c.getSize(); ++j)
 			if(getLit(i) == c.getLit(j))
 				{ match = true; break; }
 			else if(getGateID(getLit(i)) == getGateID(c.getLit(j)) &&
@@ -328,7 +334,7 @@ PdrCube::selfSubsumeComplex(const PdrCube& c)const
 	   getSize() > c.getSize())
 		return ERROR_GATELIT;
 	AigGateLit ret = UNDEF_GATELIT;
-	for(size_t i = 0, j = 0; i < getSize(); ++i, ++j)
+	for(unsigned i = 0, j = 0; i < getSize(); ++i, ++j)
 	{
 		for(; j < c.getSize(); ++j)
 			if(getLit(i) == c.getLit(j))
@@ -352,6 +358,7 @@ PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t
                        size_t satQL, size_t _verbosity, bool checkII,
                        PdrStimuType stimuType, size_t stimuNum1, size_t stimuNum2)
 : SafetyBNChecker    (ntkToCheck, outputIdx, _trace, timeout)
+, mainType           (PDR_MAIN_NORMAL)
 , curFrame           (0)
 , maxFrame           (maxF)
 , targetCube         ()
@@ -649,6 +656,7 @@ PdrChecker::mergeInf(const vector<PdrCube>& indSet, bool pushAtBack, const PdrCu
 							frame[f][ss++] = move(frame[f][ii]);
 						else { assert(ss == ii); ss += 1; }
 					}
+					else frame[f][ii].setMarkA(true);
 				frame[f].resize(ss);
 			}
 			if(cubeStat.isON())
@@ -722,11 +730,24 @@ PdrChecker::check()
 		                              checkAndPrintIndInv();                                                     break;
 		case PDR_RESULT_ABORT_FRAME : cout << "Cannot determinie the property up to frame " << maxFrame << endl; break;
 		case PDR_RESULT_ABORT_RES   : cout << "Cannot determinie the property"                          << endl; break;
+
+		default: assert(false);
 	}
 }
 
 PdrResultType
 PdrChecker::checkInt()
+{
+	switch(mainType)
+	{
+		case PDR_MAIN_NORMAL     : return checkIntNormal();
+		case PDR_MAIN_ONE_BY_ONE : return checkIntOneByOne();
+		default: assert(false);    return PDR_RESULT_ERROR;
+	}
+}
+
+PdrResultType
+PdrChecker::checkIntNormal()
 {
 	try
 	{
@@ -752,12 +773,55 @@ PdrChecker::checkInt()
 	catch(const CheckerBreak&) { return PDR_RESULT_ABORT_RES; }
 }
 
+PdrResultType
+PdrChecker::checkIntOneByOne()
+{
+	for(size_t f = 0; true;)
+	{
+		assert(f <= maxFrame);
+		curFrame = f;
+		if(PdrCube notPCube = getNotPCube();
+		   notPCube.isNone())
+		{
+			assert(f + 2 <= frame.size());
+			if(f + 2 == frame.size())
+			{
+				if(f == maxFrame)
+					return PDR_RESULT_ABORT_FRAME;
+				if(propBlockedCubes())
+					return PDR_RESULT_UNSAT;
+			}
+			else if(frame[curFrame].empty())
+				return PDR_RESULT_UNSAT;
+			f += 1;
+		}
+		else
+		{
+			setTargetCube(notPCube);
+			if(PdrResultType r = checkIntNormal();
+			   r != PDR_RESULT_UNSAT)
+				return r;
+			//TODO, try other schemes
+			// 1. Just reuse the infinite frame
+			// 2. Not to resue any result, treat them as separate problems
+			resetTargetCube();
+			size_t emptyFrame = 1;
+			for(; !frame[emptyFrame].empty(); ++emptyFrame);
+			pushToFrameInf(emptyFrame);
+			if(oblType == PDR_OBL_PUSH)
+			{
+				//TODO
+			}
+		}
+	}
+}
+
 vector<AigGateID>
 PdrChecker::genTarget(const PdrCube& c)const
 {
 	vector<AigGateID> target;
 	target.reserve(c.getSize());
-	for(size_t i = 0; i < c.getSize(); ++i)
+	for(unsigned i = 0; i < c.getSize(); ++i)
 		target.push_back(ntk->getGate(getGateID(c.getLit(i)))->getFanIn0ID());
 	return target;
 }
@@ -869,7 +933,7 @@ PdrChecker::generalize(const PdrTCube& s)
 {
 	genCube.clear();
 	const PdrCube& c = s.getCube();
-	for(size_t i = 0; i < c.getSize(); ++i)
+	for(unsigned i = 0; i < c.getSize(); ++i)
 		genCube.push_back(c.getLit(i));
 	if(isOrdDynamic())
 		sortGenCubeByAct();
@@ -972,7 +1036,7 @@ PdrChecker::generalize(const PdrTCube& s)
 
 	if(unsatGenStat.isON())
 		unsatGenStat->finishPushTime(),
-		unsatGenStat->incRemoveCount(s.getCube().getSize() - genCube.size());
+		unsatGenStat->incRemoveCount(size_t(s.getCube().getSize()) - genCube.size());
 
 	if(isVerboseON(PDR_VERBOSE_GEN))
 	{
@@ -1012,7 +1076,7 @@ PdrChecker::propBlockedCubes()
 
 		vector<PdrCube> tmp(frame[f]);
 		for(const PdrCube& c: tmp)
-			if(c.isCount(2))
+			if(!c.getMarkA())
 			{
 				if(PdrTCube s = solveRelative(PdrTCube(f+1, c), NOIND);
 				   s.getFrame() != FRAME_NULL)
@@ -1027,12 +1091,11 @@ PdrChecker::propBlockedCubes()
 						     << "After:  " << s.getCube() << endl
 						     << RepeatChar('-', 36)       << endl;
 					}
-					addBlockedCube(s, f);
+					addBlockedCube(s, c.getSize() == s.getCube().getSize() ? f : 1);
 				}
 				CheckBreakPdr(false);
 				checkRecycle();
 			}
-			else assert(c.isCount(1));
 		if(frame[f].empty())
 		{
 			if(f < curFrame)
@@ -1042,26 +1105,7 @@ PdrChecker::propBlockedCubes()
 				return returnBy(true);
 			}
 			assert(prpType == PDR_PRP_EAGER);
-			f += 1;
-			const size_t inf = frame.size() - 1;
-			assert(f < inf);
-			for(; f < inf; ++f)
-			{
-				for(const PdrCube& c: frame[f])
-				{
-					if(isVerboseON(PDR_VERBOSE_PROP))
-					{
-						cout << RepeatChar('-', 36) << endl
-						     << "Propagate cube by induction from frame " << f << " to Inf";
-						cout << ":" << c            << endl
-						     << RepeatChar('-', 36) << endl;
-					}
-					addBlockedCube(PdrTCube(FRAME_INF, c), inf);
-					if(propStat.isON())
-						propStat->incInfCubeCount();
-				}
-				frame[f].clear();
-			}
+			pushToFrameInf(f);
 			break;
 		}
 	}
@@ -1117,7 +1161,7 @@ PdrChecker::isBlockedSAT(const PdrTCube& badTCube)const
 bool
 PdrChecker::isInitial(const PdrCube& cube)const
 {
-	for(size_t i = 0; i < cube.getSize(); ++i)
+	for(unsigned i = 0; i < cube.getSize(); ++i)
 		if(!isInv(cube.getLit(i)))
 			return false;
 	return true;
@@ -1148,11 +1192,16 @@ PdrChecker::newFrame()
 	frame[frame.size()-2].clear();
 	actVar.push_back(solver->newVar());
 	badDequeVec.emplace_back();
+	assert(actVar.size() == frame.size() - 1);
+	assert(actVar.size() == badDequeVec.size());
 }
 
 void
 PdrChecker::addBlockedCube(const PdrTCube& blockTCube, size_t initF)
 {
+	if(stimulator != 0 && stimulator->stimulate(blockTCube))
+		return;
+
 	size_t k = frame.size() - 1;
 	const size_t blockFrame = blockTCube.getFrame();
 	assert(blockFrame != FRAME_NULL);
@@ -1173,14 +1222,21 @@ PdrChecker::addBlockedCube(const PdrTCube& blockTCube, size_t initF)
 	{
 		size_t s = 0;
 		for(size_t i = 0, n = frame[f].size(); i < n; ++i)
+		{
+			assert(!frame[f][i].getMarkA());
 			if(!subsume(blockCube, frame[f][i]))
 			{
 				if(s < i)
 					frame[f][s++] = move(frame[f][i]);
 				else { assert(s == i); s += 1; }
 			}
-			else if(cubeStat.isON())
-				cubeStat->incSubsumeBlockCube();
+			else
+			{
+				frame[f][i].setMarkA(true);
+				if(cubeStat.isON())
+					cubeStat->incSubsumeBlockCube();
+			}
+		}
 		frame[f].resize(s);
 	}
 	if(cubeStat.isON())
@@ -1192,7 +1248,7 @@ PdrChecker::addBlockedCube(const PdrTCube& blockTCube, size_t initF)
 
 	if(isOrdDynamic())
 	{
-		for(size_t i = 0; i < blockCube.getSize(); ++i)
+		for(unsigned i = 0; i < blockCube.getSize(); ++i)
 			if((activity[getGateID(blockCube.getLit(i))] += actInc) > 1e100)
 			{
 				for(size_t i = 0, M = ntk->getMaxGateNum(); i < M; ++i)
@@ -1206,30 +1262,27 @@ PdrChecker::addBlockedCube(const PdrTCube& blockTCube, size_t initF)
 		}
 	}
 
-	if(stimulator == 0 || !stimulator->stimulate(blockTCube))
+	frame[k].push_back(blockCube);
+	// Actually it must hold currently, but we do not exclude the possibility for future
+	if(blockFrame >= frameConverted)
+		addBlockedCubeFrame(blockFrame, blockCube);
+
+	if(isVerboseON(PDR_VERBOSE_BLK))
 	{
-		frame[k].push_back(blockCube);
-		// Actually it must hold currently, but we do not exclude the possibility for future
-		if(blockFrame >= frameConverted)
-			addBlockedCubeFrame(blockFrame, blockCube);
-
-		if(isVerboseON(PDR_VERBOSE_BLK))
-		{
-			cout << RepeatChar('-', 36) << endl
-				 << "Add blocked Cube: frame = ";
-			if(blockFrame == FRAME_INF) cout << "Inf"; else cout << blockFrame;
-			cout << ", " << blockCube << endl
-				 << RepeatChar('-', 36) << endl;
-		}
-
-		if(cubeStat.isON())
-			if(blockFrame == FRAME_INF)
-			{
-				cubeStat->incInfCubeNum();
-				cubeStat->incInfLitNum(blockCube.getSize());
-				cubeStat->checkMaxCLen(blockCube.getSize());
-			}
+		cout << RepeatChar('-', 36) << endl
+		     << "Add blocked Cube: frame = ";
+		if(blockFrame == FRAME_INF) cout << "Inf"; else cout << blockFrame;
+		cout << ", " << blockCube << endl
+		     << RepeatChar('-', 36) << endl;
 	}
+
+	if(cubeStat.isON())
+		if(blockFrame == FRAME_INF)
+		{
+			cubeStat->incInfCubeNum();
+			cubeStat->incInfLitNum(blockCube.getSize());
+			cubeStat->checkMaxCLen(blockCube.getSize());
+		}
 }
 
 void
@@ -1240,11 +1293,12 @@ PdrChecker::addBlockedCubeFrame(size_t blockFrame, const PdrCube& blockCube)cons
 
 	if(blockFrame != FRAME_INF)
 		litList.push_back(Lit(actVar[blockFrame], true));
-	for(size_t i = 0; i < blockCube.getSize(); ++i)
+	for(unsigned i = 0; i < blockCube.getSize(); ++i)
 		litList.push_back(Lit(solver->getVarInt(getGateID(blockCube.getLit(i)), 0),
 		                      !isInv(blockCube.getLit(i))));
 	solver->addClause(litList);
 	litList.clear();
+	const_cast<PdrCube&>(blockCube).setMarkA(false);
 }
 
 void
@@ -1292,7 +1346,7 @@ PdrChecker::terSim(const vector<AigGateID>& target)const
 		for(size_t i = 0, L = ntk->getLatchNum(); i < L; ++i)
 			if(ntk->getLatchNorm(i)->isGlobalRef())
 				latchInCone += 1;
-		terSimStat->incRemoveCount(latchInCone - c.getSize());
+		terSimStat->incRemoveCount(latchInCone - size_t(c.getSize()));
 	}
 	if(isVerboseON(PDR_VERBOSE_TERSIM))
 		cout << RepeatChar('-', 36) << endl
@@ -1414,7 +1468,7 @@ PdrChecker::addCurNotState(const PdrCube& c)const
 {
 	const Var act = solver->newVar();
 	litList.push_back(Lit(act, true));
-	for(size_t i = 0; i < c.getSize(); ++i)
+	for(unsigned i = 0; i < c.getSize(); ++i)
 		litList.push_back(Lit(solver->getVarInt(getGateID(c.getLit(i)), 0),
 		                      !isInv(c.getLit(i))));
 	solver->addClause(litList);
@@ -1426,7 +1480,7 @@ PdrChecker::addCurNotState(const PdrCube& c)const
 void
 PdrChecker::addState(const PdrCube& c, size_t level)const
 {
-	for(size_t i = 0; i < c.getSize(); ++i)
+	for(unsigned i = 0; i < c.getSize(); ++i)
 		solver->addAssump(solver->getVarInt(getGateID(c.getLit(i)), level),
 		                  isInv(c.getLit(i)));
 }
@@ -1449,12 +1503,12 @@ PdrChecker::unsatGen(const PdrCube& c)const
 {
 	assert(!isInitial(c));
 	genCube.clear();
-	for(size_t i = 0; i < c.getSize(); ++i)
+	for(unsigned i = 0; i < c.getSize(); ++i)
 		if(solver->inConflict(getGateID(c.getLit(i)), 1))
 			genCube.push_back(c.getLit(i));
 	if(isInitial(genCube))
 	{
-		for(size_t i = c.getSize() - 1; i != size_t(-1); --i)
+		for(unsigned i = c.getSize() - 1; i != unsigned(-1); --i)
 			if(!isInv(c.getLit(i)))
 			{
 				size_t j = genCube.size();
@@ -1698,7 +1752,7 @@ PdrChecker::convertCNF()const
 void
 PdrChecker::convertCNF(const PdrCube& c)const
 {
-	for(size_t i = 0; i < c.getSize(); ++i)
+	for(unsigned i = 0; i < c.getSize(); ++i)
 		solver->convertToCNF(getGateID(c.getLit(i)), 1);
 }
 
@@ -1716,7 +1770,7 @@ PdrChecker::refineInf()
 {
 	vector<PdrCube> tmp(frame.back());
 	for(const PdrCube& c: tmp)
-		if(c.isCount(2))
+		if(!c.getMarkA())
 		{
 			if(convertInNeedCone) convertCNF(c);
 			const PdrTCube newTCube = generalize(PdrTCube(FRAME_INF, c));
@@ -1735,7 +1789,6 @@ PdrChecker::refineInf()
 			}
 			checkRecycle();
 		}
-		else assert(c.isCount(1));
 }
 
 void
@@ -1811,7 +1864,7 @@ PdrChecker::checkAndPrintIndInv()
 			checkSolver->addAssump(ntk->getLatchID(i), 0, true);
 		for(const PdrCube& c: indInv)
 		{
-			for(size_t i = 0; i < c.getSize(); ++i)
+			for(unsigned i = 0; i < c.getSize(); ++i)
 				litList.push_back(Lit(checkSolver->getVarInt(getGateID(c.getLit(i)), 0),
 				                  !isInv(c.getLit(i))));
 			checkSolver->addClause(litList);
@@ -1906,6 +1959,29 @@ PdrChecker::getCurIndSet(bool toSort)const
 	return indSet;
 }
 
+void
+PdrChecker::pushToFrameInf(size_t emptyFrame)
+{
+	const size_t inf = frame.size() - 1;
+	assert(emptyFrame < inf);
+	for(size_t ff = inf - 1; ff > emptyFrame; --ff)
+	{
+		for(const PdrCube& c: frame[ff])
+		{
+			if(isVerboseON(PDR_VERBOSE_PROP))
+			{
+				cout << RepeatChar('-', 36) << endl
+				     << "Propagate cube by induction from frame " << ff << " to Inf";
+				cout << ":" << c            << endl
+				     << RepeatChar('-', 36) << endl;
+			}
+			addBlockedCube(PdrTCube(FRAME_INF, c), inf);
+			if(propStat.isON())
+				propStat->incInfCubeCount();
+		}
+		frame[ff].clear();
+	}
+}
 
 #ifdef UsePatternCheckSAT
 }
@@ -2061,7 +2137,7 @@ PdrChecker::checkPatFrame(size_t f)const
 				value |= isInv(lit) ? simValue[getGateID(lit)] : ~simValue[getGateID(lit)];
 			}
 */
-			for(size_t i = 0; i < c.getSize(); ++i)
+			for(unsigned i = 0; i < c.getSize(); ++i)
 				value |= isInv(c.getLit(i)) ?  simValue[getGateID(c.getLit(i))]
 				                            : ~simValue[getGateID(c.getLit(i))];
 			simMask &= value;
@@ -2075,7 +2151,7 @@ PdrChecker::genDfsList(const PdrCube& cube)const
 {
 	dfsList.clear();
 	AigGate::setGlobalRef();
-	for(size_t i = 0; i < cube.getSize(); ++i)
+	for(unsigned i = 0; i < cube.getSize(); ++i)
 		ntk->getGate(getGateID(cube.getLit(i)))->getFanIn0Ptr()->genDfsList(dfsList);
 }
 

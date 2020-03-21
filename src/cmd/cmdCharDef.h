@@ -22,7 +22,8 @@ namespace _54ff
 class ttySetting
 {
 public:
-	ttySetting(): waitNow(false), enable(true) {}
+	ttySetting(): waitNow(false), enable(true) { check(); }
+	~ttySetting() { setToOld(); }
 
 	void check();
 	Key returnExactKey();

@@ -105,7 +105,8 @@ enum PdrResultType
 	PDR_RESULT_SAT,
 	PDR_RESULT_UNSAT,
 	PDR_RESULT_ABORT_FRAME,
-	PDR_RESULT_ABORT_RES
+	PDR_RESULT_ABORT_RES,
+	PDR_RESULT_ERROR
 };
 
 enum PdrStimuType
@@ -114,6 +115,12 @@ enum PdrStimuType
 	PDR_STIMU_LOCAL_ALL,
 	PDR_STIMU_LOCAL_MIX,
 	PDR_STIMU_NONE
+};
+
+enum PdrMainType
+{
+	PDR_MAIN_NORMAL,
+	PDR_MAIN_ONE_BY_ONE
 };
 
 class PdrTerSimStat : public Stat<3, 1>
@@ -219,9 +226,9 @@ public:
 
 /* The memory alignment of PdrCube
 
-   prevCube   refCount   hashValue   litNum | (... literals ...)
- |<-  8   ->|<-  8   ->|<-   8   ->|<- 8  ->|<-   4 * litNum   ->|
-                                         pointer
+    prevCube   hashValue   markA   markB    refCount    litNum | (... literals ...)
+ |<-   8   ->|<-   8   ->|<- 1 ->|<- 1 ->|<-   2   ->|<-  4  ->|<-   4 * litNum   ->|
+                                                            pointer
 */
 
 class PdrCube
@@ -248,26 +255,32 @@ public:
 	bool operator< (const PdrCube&)const;
 	bool operator==(const PdrCube&)const;
 
-	void setSize(size_t s) { *(uint64Ptr - 1) = s; }
-	void setLit(size_t i, AigGateLit lit) { *(uint32Ptr + i) = lit; }
-	void calAbstract(size_t i) { *(uint64Ptr - 2) |= (size_t(1) << (getGateID(getLit(i)) & 63)); }
+	void setSize(unsigned s) { *(uint32Ptr - 1) = s; }
+	void setLit(unsigned i, AigGateLit lit) { *(uint32Ptr + i) = lit; }
+	void calAbstract(unsigned i) { *(uint64Ptr - 2) |= (size_t(1) << (getGateID(getLit(i)) & 63)); }
 	void initAbstract() { *(uint64Ptr - 2) = 0; }
 
-	size_t getSize()const  { return *(uint64Ptr - 1); }
-	AigGateLit getLit(size_t i)const { return *(uint32Ptr + i); }
+	unsigned getSize()const  { return *(uint32Ptr - 1); }
+	AigGateLit getLit(unsigned i)const { return *(uint32Ptr + i); }
 	size_t getAbs()const { return *(uint64Ptr - 2); }
 
-	bool isCount(size_t c)const { return *(uint64Ptr - 3) == c; }
-	void initCount() { *(uint64Ptr - 3) = 0; }
-	void incCount() { *(uint64Ptr - 3) += 1; }
-	void decCount() { *(uint64Ptr - 3) -= 1; }
+	bool isCount(unsigned short c)const { return *(uint16Ptr - 3) == c; }
+	void initCount() { *(uint16Ptr - 3) = 0; }
+	void incCount() { *(uint16Ptr - 3) += 1; }
+	void decCount() { *(uint16Ptr - 3) -= 1; }
 	bool toDelete()const { return isCount(0); }
 	void clear() { operator delete(getOriPtr()); }
 	void decAndCheck() { decCount(); if(toDelete()) clear(); }
 	void clean() { if(!isNone()) decAndCheck(); }
+	void reset() { clean(); uint32Ptr = 0; }
+
+	bool getMarkA()const { return *(boolPtr - 8); }
+	void setMarkA(bool value) { *(boolPtr - 8) = value; }
+	bool getMarkB()const { return *(boolPtr - 7); }
+	void setMarkB(bool value) { *(boolPtr - 7) = value; }
 
 	bool isNone()const { return uint32Ptr == 0; }
-	void* getOriPtr()const { return uint64Ptr - 4; }
+	void* getOriPtr()const { return uint64Ptr - 3; }
 
 	bool subsume(const PdrCube& c)const { return subsumeComplexN(c); }
 	bool subsumeTrivial (const PdrCube&)const;
@@ -282,7 +295,12 @@ public:
 	bool    exactOneLess(const PdrCube&)const;
 
 private:
-	union { unsigned* uint32Ptr; size_t* uint64Ptr; PdrCube* cubePtr; };
+	union {
+		bool*            boolPtr;
+		unsigned short*  uint16Ptr;
+		unsigned*        uint32Ptr;
+		size_t*          uint64Ptr;
+		PdrCube*         cubePtr; };
 };
 
 class PdrTCube
@@ -325,11 +343,15 @@ protected:
 	PdrChecker* cloneChecker(size_t)const;
 	const vector<PdrCube>& getInfFrame()const { return frame.back(); }
 	void setTargetCube(const PdrCube& c) { targetCube = c; }
+	void resetTargetCube() { targetCube.reset(); }
 // For stimulator (End)
 
 protected:
 	void check();
+
 	PdrResultType checkInt();
+	PdrResultType checkIntNormal();
+	PdrResultType checkIntOneByOne();
 
 protected:
 	vector<AigGateID> genTarget(const PdrCube&)const;
@@ -397,8 +419,11 @@ protected:
 	bool subsume(const PdrCube&, const PdrCube&)const;
 	AigGateLit selfSubsume(const PdrCube&, const PdrCube&)const;
 	vector<PdrCube> getCurIndSet(bool)const;
+	void pushToFrameInf(size_t);
 
 protected:
+	PdrMainType  mainType;
+
 	size_t  curFrame;
 	size_t  maxFrame;
 
