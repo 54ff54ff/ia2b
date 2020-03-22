@@ -214,9 +214,12 @@ private:
 	/*====================================*/
 
 	char* findFirstNotSpace()const { char* tmp = const_cast<char*>(cmdBeg); for(; tmp < cmdEnd && *tmp == char(SPACE); ++tmp); return tmp; }
+	bool onlySpaceInLine()const { return findFirstNotSpace() == cmdEnd; }
+	char* findFirstNotSpace (char* start)const { for(; start < cmdEnd && *start == char(SPACE); ++start); return start; }
+	char* findFirstSemicolon(char* start)const { for(; start < cmdEnd && *start != ';';         ++start); return start; }
 	void storeCurCmdToHistory() { history.back().assign(cmdBeg, charNumInCmdLine()); }
 	CmdExecStatus addHistoryAndExecCmd();
-	CmdExecStatus parseAndExecCmd(char*&);
+	CmdExecStatus parseAndExecCmd(const vector<char*>&);
 
 	static CharArr listCmdArea;
 	void copyToList()const;

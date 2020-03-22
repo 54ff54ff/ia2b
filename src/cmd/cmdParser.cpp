@@ -430,15 +430,19 @@ CmdMgr::printHistory(size_t numFromBot)const
 }
 
 CmdExecStatus
-CmdMgr::parseAndExecCmd(char*& cmd_opt)
+CmdMgr::parseAndExecCmd(const vector<char*>& cmds)
 {
-	if(CmdExec* e = cmdMap[cmd_opt]; e != 0)
-		return e->exec(cmd_opt);
-	else
-	{
-		cerr << "[Error] Unknown command!" << endl;
-		return CMD_EXEC_NOP;
-	}
+	CmdExecStatus status;
+	assert(!cmds.empty());
+	for(char* tmp: cmds)
+		if(CmdExec* e = cmdMap[tmp]; e != 0)
+			status = e->exec(tmp);
+		else
+		{
+			cerr << "[Error] Unknown command!" << endl;
+			status = CMD_EXEC_NOP;
+		}
+	return status;
 }
 
 CmdMgr::CharArr CmdMgr::listCmdArea;
@@ -446,7 +450,13 @@ CmdMgr::CharArr CmdMgr::listCmdArea;
 void
 CmdMgr::copyToList()const
 {
-	const char* tmp = findFirstNotSpace();
+	// TODO, more testing for semicolon
+	char* tmp = 0;
+	for(char* tmp2 = const_cast<char*>(cmdBeg); tmp2 < cursor; ++tmp2)
+		if(*tmp2 == ';')
+			tmp = tmp2;
+	tmp = tmp == 0 ? findFirstNotSpace()
+	               : findFirstNotSpace(tmp + 1);
 	size_t copyCharNum = tmp < cursor ? strLen(tmp, cursor) : 0;
 	memcpy(listCmdArea.begin(), tmp, copyCharNum);
 	listCmdArea.begin()[copyCharNum] = '\0';

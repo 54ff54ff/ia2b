@@ -91,14 +91,14 @@ CmdMgr::execOneCmd_byHand()
 			case PAGEUP         : retrieveHistory(curHisIdx - PG_OFFSET); break;
 			case PAGEDOWN       : retrieveHistory(curHisIdx + PG_OFFSET); break;
 			case ESC            : setToOld(); return pressESC();
-			case TAB            : pressTab(tabCounter==tabRef); tabRef = tabCounter + 1; break;
+			case TAB            : setToOld(); pressTab(tabCounter == tabRef); tabRef = tabCounter + 1; break;
 			case CTRL_A         : selectAll(); break;
 			case CTRL_X         : cut();       break;
 			case CTRL_C         : copy();      break;
 			case CTRL_V         : paste();     break;
-			case CTRL_Z         : raise(SIGTSTP); break;
-			case CTRL_Q         : raise(SIGINT ); break;
-			case CTRL_BACKSLASH : raise(SIGQUIT); break;
+			case CTRL_Z         : setToOld(); raise(SIGTSTP); break;
+			case CTRL_Q         : setToOld(); raise(SIGINT ); break;
+			case CTRL_BACKSLASH : setToOld(); raise(SIGQUIT); break;
 			case CTRL_D         : setToOld(); return pressInputEnd();
 			case CTRL_U         : setToOld(); printUsage(); break;
 			case CTRL_K         : flipEnable(); break;
@@ -253,15 +253,27 @@ CmdMgr::retrieveHistory(size_t targetHisIdx)
 CmdExecStatus
 CmdMgr::addHistoryAndExecCmd()
 {
-	if(char* cmd = findFirstNotSpace(); cmd == cmdEnd)
+	// Semicolon is used to indicate the end of a command, and maybe another command after that
+	// If only spaces before the semicolon, issue an error
+	if(onlySpaceInLine())
 		return popHistory();
-	else
+	storeCurCmdToHistory(); cout << endl;
+	vector<char*> cmds;
+	for(char* tmp = const_cast<char*>(cmdBeg); true; ++tmp)
 	{
-		storeCurCmdToHistory();
-		*cmdEnd = char(ZERO);
-		cout << endl;
-		return parseAndExecCmd(cmd);
+		char* tmp2 = findFirstNotSpace(tmp);
+		if(tmp2 == cmdEnd) break;
+		tmp = findFirstSemicolon(tmp2);
+		if(tmp == tmp2)
+		{
+			cerr << "[Error] Only spaces before the semicolon!" << endl;
+			return CMD_EXEC_NOP;
+		}
+		cmds.push_back(tmp2);
+		*tmp = char(ZERO);
+		if(tmp == cmdEnd) break;
 	}
+	return parseAndExecCmd(cmds);
 }
 
 void
