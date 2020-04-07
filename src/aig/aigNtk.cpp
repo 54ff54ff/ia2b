@@ -421,7 +421,7 @@ AigNtk::rmConstLatch()
 }
 
 bool
-AigNtk::simulate(const char* patternFileName, bool printAll, const char* outFileName)const
+AigNtk::simulate(const char* patternFileName, AigSimPrintType printType, const char* outFileName)const
 {
 	ofstream outFile;
 	if(outFileName != 0)
@@ -436,6 +436,7 @@ AigNtk::simulate(const char* patternFileName, bool printAll, const char* outFile
 	if(!aigSim.checkCombLoop())
 		return false;
 	aigSim.initValue();
+	aigSim.initNextState();
 	aigSim.setAllToDCorNone();
 	aigSim.setConst0();
 	aigSim.setInitState();
@@ -471,9 +472,16 @@ AigNtk::simulate(const char* patternFileName, bool printAll, const char* outFile
 			{ cerr << "[Error] At line " << t << ", Missing newline!" << endl; return false; }
 
 		aigSim.simDfsList();
-		aigSim.simAllLatch();
 		aigSim.simAllOutput();
-		printAll ? aigSim.printAllGate(os) : aigSim.printAllOutput(os);
+		// Output should be simulated before latch
+		// Since some of them may directly depend on latches
+		aigSim.simAllLatchSynch();
+		switch(printType)
+		{
+			case AIG_SIM_PRINT_ALL   : aigSim.printAllGate  (os); break;
+			case AIG_SIM_PRINT_PO    : aigSim.printAllOutput(os); break;
+			case AIG_SIM_PRINT_LATCH : aigSim.printAllLatch (os); break;
+		}
 		os << endl;
 
 		if(pattern.peek(); pattern.eof())

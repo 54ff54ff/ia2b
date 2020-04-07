@@ -159,18 +159,18 @@ CirSolver::convertOr(Var f, bool invF, const vector<Lit>& litList)
 }
 
 void
-CirSolver::reportLatch(size_t level)const
+CirSolver::reportLatch(size_t idx, size_t level)const
 {
-	cout << level << ": ";
+	cout << idx << ": ";
 	for(size_t i = 0, L = ntk->getLatchNum(); i < L; ++i)
 		cout << getValueChar(ntk->getLatchID(i), level);
 	cout << endl;
 }
 
 void
-CirSolver::reportPI(size_t level)const
+CirSolver::reportPI(size_t idx, size_t level)const
 {
-	cout << level << ": ";
+	cout << idx << ": ";
 	for(size_t i = 0, I = ntk->getInputNum(); i < I; ++i)
 		cout << getValueChar(ntk->getInputID(i), level);
 	cout << endl;

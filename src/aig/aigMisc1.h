@@ -121,7 +121,8 @@ public:
 
 	/*====================================*/
 
-	void initValue() { simValue.init(ntk->getMaxGateNum()); }
+	void initValue() { assert(simValue.empty()); simValue.init(ntk->getMaxGateNum()); }
+	void initNextState() { assert(nextState.empty()); nextState.init(ntk->getLatchNum()); }
 	void setValue(AigGateID id, ThreeValue v) { simValue[id] = v; }
 	void setInputValue(size_t i, ThreeValue v) { setValue(ntk->getInputID(i), v); }
 	void setLatchValue(size_t i, ThreeValue v) { setValue(ntk->getLatchID(i), v); }
@@ -142,11 +143,14 @@ public:
 	void simDfsList() { for(AigAnd* a: dfsList) simOneAnd(a); }
 	void simOneCO(AigGate* g) { simValue[g->getGateID()] = simOneCOValue(g); }
 	ThreeValue simOneCOValue(AigGate*)const;
-	void simLatch (size_t i) { simOneCO(ntk->getLatchNorm (i)); }
 	void simOutput(size_t i) { simOneCO(ntk->getOutputNorm(i)); }
-	void simAllLatch ();
 	void simAllOutput();
 	void simByEvent();
+	void simAllLatchSynch();
+
+	// Still preserve these, but these will lead to error if any latch depends directly on one latch
+	void simLatch (size_t i) { simOneCO(ntk->getLatchNorm (i)); }
+	void simAllLatch ();
 
 	ThreeValue getValue(AigGateID id)const { return simValue[id]; }
 	ThreeValue getInputValue (size_t i)const { return getValue(ntk->getInputID(i)); }
@@ -191,6 +195,7 @@ public:
 private:
 	const AigNtk*             ntk;
 	Array<ThreeValue>         simValue;
+	Array<ThreeValue>         nextState;
 	vector<AigAnd*>           dfsList;
 	AigFanouter               fanOut;
 	AigLeveler                level;

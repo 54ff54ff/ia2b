@@ -62,7 +62,8 @@ public:
 	/*====================================*/
 
 	virtual void resetSolverInt() = 0;
-	void resetSolver() { idLvlToVar.clear(); idLvlToVar.resize(ntk->getMaxGateNum()); resetSolverInt(); }
+	void resetSolver() { idLvlToVar.clear(); clearAssump();
+	                     idLvlToVar.resize(ntk->getMaxGateNum()); resetSolverInt(); }
 
 	/*====================================*/
 
@@ -121,9 +122,9 @@ public:
 	char getValueChar(Var v)const { return getValue(v) == l_Undef ? '?' : (getValue(v) == l_True ? '1' : '0'); }
 	bool inConflict(AigGateID id, size_t level)const { return inConflict(getVarInt(id, level)); }
 
-	void reportLatch(size_t)const;
-	void reportPI(size_t)const;
-	void reportTrace(size_t maxLevel) { for(size_t l = 0; l <= maxLevel; ++l) reportPI(l); }
+	void reportLatch(size_t, size_t)const;
+	void reportPI   (size_t, size_t)const;
+	void reportTrace(size_t maxLevel) { for(size_t l = 0; l <= maxLevel; ++l) reportPI(l, l); }
 
 	/*====================================*/
 

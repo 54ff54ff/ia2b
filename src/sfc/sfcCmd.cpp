@@ -27,7 +27,7 @@ CmdClass(ItpCheck, CMD_TYPE_VERIFICATION, 5, "-TRace",   3,
                                              "-All",     2,
                                              "-Last",    2,
                                              "-TImeout", 3);
-CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 28, "-TRace",     3,
+CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 29, "-TRace",     3,
                                               "-Max",       2,
                                               "-EVent",     3,
                                               "-Backward",  2,
@@ -54,7 +54,8 @@ CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 28, "-TRace",     3,
                                               "-CHeck",     3,
                                               "-LOCALInf",  7,
                                               "-LOCALAll",  7,
-                                              "-LOCALMix",  7);
+                                              "-LOCALMix",  7,
+                                              "-HALF",      5);
 CmdClass(PbcCheck, CMD_TYPE_VERIFICATION, 9, "-TRace",     3,
                                              "-Max",       2,
                                              "-Stat",      2,
@@ -344,7 +345,8 @@ ItpCheckCmd::getHelpStr()const
 	                 [-APPROXGen | -NOGen]
 	                 [-EAger] [-INFinite] [-ASsert]
 	                 [-STat ("atsgprcx")] [-Verbose ("aogpbtcimfx")]
-	                 [<-LOCALInf | -LOCALAll | -LOCALMix> ((unsigned) backtrackNum matchNum)]
+	                 [<<-LOCALInf | -LOCALAll | -LOCALMix> ((unsigned) backtrackNum matchNum) |
+	                  -HALF ((unsigned) observeNum matchNum)> (unsigned satLimit)]
                      [-CHeck]
 --------------------------------------------------------------------------
 	0:  -TRace,     3
@@ -375,6 +377,7 @@ ItpCheckCmd::getHelpStr()const
 	25: -LOCALInf,  7
 	26: -LOCALAll,  7
 	27: -LOCALMix,  7
+	28: -HALF,      5
 ========================================================================*/
 
 CmdExecStatus
@@ -417,7 +420,7 @@ PdrCheckCmd::exec(char* options)const
 	size_t satQL = 0;
 
 	PdrStimuType pstt = PDR_STIMU_NONE;
-	size_t stimuNum1, stimuNum2;
+	size_t stimuNum1, stimuNum2, stimuNum3;
 
 	for(size_t i = 1, n = tokens.size(); i < n; ++i)
 		if(optMatch<0>(tokens[i]))
@@ -648,6 +651,12 @@ PdrCheckCmd::exec(char* options)const
 				return errorOption(CMD_OPT_MISSING);
 			if(!myStrToUInt(tokens[i], stimuNum2))
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], stimuNum3))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(stimuNum2 == 0)
+				{ cerr << "[Error] matchNum cannot be 0!" << endl; return CMD_EXEC_ERROR_EXT; }
 			if(stimuNum1 < stimuNum2) {
 				cerr << "[Error] backtrackNum (" << stimuNum1 << ") is smaller than "
 				     << "matchNum (" << stimuNum2 << ")!" << endl; return CMD_EXEC_ERROR_EXT; }
@@ -665,6 +674,12 @@ PdrCheckCmd::exec(char* options)const
 				return errorOption(CMD_OPT_MISSING);
 			if(!myStrToUInt(tokens[i], stimuNum2))
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], stimuNum3))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(stimuNum2 == 0)
+				{ cerr << "[Error] matchNum cannot be 0!" << endl; return CMD_EXEC_ERROR_EXT; }
 			if(stimuNum1 < stimuNum2) {
 				cerr << "[Error] backtrackNum (" << stimuNum1 << ") is smaller than "
 				     << "matchNum (" << stimuNum2 << ")!" << endl; return CMD_EXEC_ERROR_EXT; }
@@ -682,10 +697,38 @@ PdrCheckCmd::exec(char* options)const
 				return errorOption(CMD_OPT_MISSING);
 			if(!myStrToUInt(tokens[i], stimuNum2))
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], stimuNum3))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(stimuNum2 == 0)
+				{ cerr << "[Error] matchNum cannot be 0!" << endl; return CMD_EXEC_ERROR_EXT; }
 			if(stimuNum1 < stimuNum2) {
 				cerr << "[Error] backtrackNum (" << stimuNum1 << ") is smaller than "
 				     << "matchNum (" << stimuNum2 << ")!" << endl; return CMD_EXEC_ERROR_EXT; }
 			pstt = PDR_STIMU_LOCAL_MIX;
+		}
+		else if(optMatch<28>(tokens[i]))
+		{
+			if(pstt != PDR_STIMU_NONE)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], stimuNum1))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], stimuNum2))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], stimuNum3))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(stimuNum1 == 0)
+				{ cerr << "[Error] observeNum cannot be 0!" << endl; return CMD_EXEC_ERROR_EXT; }
+			if(stimuNum2 < 2)
+				{ cerr << "[Error] matchNum cannot be less than 2!" << endl; return CMD_EXEC_ERROR_EXT; }
+			pstt = PDR_STIMU_HALF;
 		}
 		else return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
 	if(!checkNtk()) return CMD_EXEC_ERROR_INT;
@@ -693,7 +736,7 @@ PdrCheckCmd::exec(char* options)const
 	                                                psit, port, pobt, pdt, ppt, pgt,
 	                                                rInf, cInNeedC, cSelf, assertF, recycleBQ, cInNeedF,
 	                                                satQL, verbosity, checkII,
-	                                                pstt, stimuNum1, stimuNum2);
+	                                                pstt, stimuNum1, stimuNum2, stimuNum3);
 	if(checker == 0) return CMD_EXEC_ERROR_INT;
 	checker->Check(); delete checker; return CMD_EXEC_DONE;
 }
@@ -712,7 +755,8 @@ PdrCheckCmd::getUsageStr()const
 	       "[-APPROXGen | -NOGen]\n"
 	       "[-EAger] [-INFinite] [-ASsert]\n"
 	       "[-STat (\"atsgprcx\")] [-Verbose (\"aogpbtcimfx\")]\n"
-	       "[<-LOCALInf | -LOCALAll | -LOCALMix> ((unsigned) backtrackNum matchNum)]\n"
+	       "[<<-LOCALInf | -LOCALAll | -LOCALMix> ((unsigned) backtrackNum matchNum) |\n"
+	       " -HALF ((unsigned) observeNum matchNum)> (unsigned satLimit)]\n"
 	       "[-CHeck]\n";
 }
 

@@ -198,12 +198,10 @@ ostream& operator<<(ostream& os, const PdrCube& c)
 	return os;
 }
 
-PdrCube::PdrCube(const vector<AigGateLit>& litList, bool toSort)
+PdrCube::PdrCube(const vector<AigGateLit>& litList, bool toSort, const PdrCube* prevCube)
 {
 	const unsigned s = litList.size();
-	uint32Ptr = (unsigned*)operator new(sizeof(unsigned) * s +
-	                                    sizeof(size_t)   * 3);
-	uint64Ptr += 3;
+	allocMem(s);
 	initCount();
 	setSize(s);
 	initAbstract();
@@ -214,6 +212,7 @@ PdrCube::PdrCube(const vector<AigGateLit>& litList, bool toSort)
 	for(unsigned i = 1; i < s; ++i)
 		assert(getLit(i-1) < getLit(i));
 	incCount();
+	setPrevCube(prevCube);
 }
 
 bool
@@ -356,13 +355,15 @@ PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t
                        PdrSimType simT, PdrOrdType ordT, PdrOblType oblT, PdrDeqType deqT, PdrPrpType prpT, PdrGenType genT,
                        bool rInf, bool cInNeedC, bool cSelf, bool assertF, bool recycleBQ, bool cInNeedF,
                        size_t satQL, size_t _verbosity, bool checkII,
-                       PdrStimuType stimuType, size_t stimuNum1, size_t stimuNum2)
+                       PdrStimuType stimuType, size_t stimuNum1, size_t stimuNum2, size_t stimuNum3)
 : SafetyBNChecker    (ntkToCheck, outputIdx, _trace, timeout)
 , mainType           (PDR_MAIN_NORMAL)
 , curFrame           (0)
 , maxFrame           (maxF)
+, initState          ()
 , targetCube         ()
-, stimulator         (getStimulator(stimuType, isPdrStatON(stats, PDR_STAT_STIMU), stimuNum1, stimuNum2))
+, stimulator         (getStimulator(stimuType, isPdrStatON(stats, PDR_STAT_STIMU),
+                                    stimuNum1, stimuNum2, stimuNum3))
 , satQueryTime       (0)
 , unusedVarNum       (0)
 , recycleNum         (recycleN)
@@ -489,13 +490,20 @@ PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t
 		switch(stimuType)
 		{
 			case PDR_STIMU_LOCAL_INF : sfcMsg << "Observe only part of the clauses, focus on inifinte frame, "
-											  << "backtrackNum = " << stimuNum1 << ", matchNum = " << stimuNum2 << endl; break;
+											  << "backtrackNum = " << stimuNum1
+			                                  << ", matchNum = "   << stimuNum2; break;
 			case PDR_STIMU_LOCAL_ALL : sfcMsg << "Observe only part of the clauses, focus on all frames, "
-											  << "backtrackNum = " << stimuNum1 << ", matchNum = " << stimuNum2 << endl; break;
+											  << "backtrackNum = " << stimuNum1
+			                                  << ", matchNum = "   << stimuNum2; break;
 			case PDR_STIMU_LOCAL_MIX : sfcMsg << "Observe only part of the clauses, focus on mixed frames, "
-											  << "backtrackNum = " << stimuNum1 << ", matchNum = " << stimuNum2 << endl; break;
+											  << "backtrackNum = " << stimuNum1
+			                                  << ", matchNum = "   << stimuNum2; break;
+			case PDR_STIMU_HALF      : sfcMsg << "Observe neighboring region of each clause, focus on infinite frame, "
+											  << "observeNum = "   << stimuNum1
+			                                  << ", matchNum = "   << stimuNum2; break;
 			case PDR_STIMU_NONE: assert(false);
-	}
+		}
+		cout << ", satLimit = "; if(stimuNum3 == 0) cout << "Infinity"; else cout << stimuNum3; cout << endl;
 	}
 
 	/* Prepare for checking */
@@ -612,90 +620,59 @@ PdrChecker::~PdrChecker()
 }
 
 PdrChecker::PdrStimulator*
-PdrChecker::getStimulator(PdrStimuType stimuType, bool statON, size_t stimuNum1, size_t stimuNum2)
+PdrChecker::getStimulator(PdrStimuType stimuType, bool statON,
+                          size_t stimuNum1, size_t stimuNum2, size_t stimuNum3)
 {
 	switch(stimuType)
 	{
-		case PDR_STIMU_LOCAL_INF : return (new PdrStimulatorLocalInfAll(this, statON, stimuNum1, stimuNum2, true));
-		case PDR_STIMU_LOCAL_ALL : return (new PdrStimulatorLocalInfAll(this, statON, stimuNum1, stimuNum2, false));
-		case PDR_STIMU_LOCAL_MIX : return (new PdrStimulatorLocalMix   (this, statON, stimuNum1, stimuNum2));
+		case PDR_STIMU_LOCAL_INF : return (new PdrStimulatorLocalInfAll(this, statON, stimuNum1, stimuNum2, stimuNum3, true));
+		case PDR_STIMU_LOCAL_ALL : return (new PdrStimulatorLocalInfAll(this, statON, stimuNum1, stimuNum2, stimuNum3, false));
+		case PDR_STIMU_LOCAL_MIX : return (new PdrStimulatorLocalMix   (this, statON, stimuNum1, stimuNum2, stimuNum3));
+		case PDR_STIMU_HALF      : return (new PdrStimulatorHalf       (this, statON, stimuNum1, stimuNum2, stimuNum3));
 
 		default                  : assert(false);
 		case PDR_STIMU_NONE      : return 0;
 	}
 }
 
-bool
-PdrChecker::mergeInf(const vector<PdrCube>& indSet, bool pushAtBack, const PdrCube& cube)
+void
+PdrChecker::mergeInf(vector<PdrCube>& indSet, bool pushAtBack)
 {
-	vector<PdrCube>  tmp = indSet;
 	vector<PdrCube>& inf = frame.back();
+	const size_t infIdx = frame.size() - 1;
 	size_t s = 0;
-	for(size_t i = 0, n = tmp.size(); i < n; ++i)
-	{
-		bool subsumed = false;
-		if(cubeStat.isON())
-			cubeStat->startTime();
-		for(size_t ii = 0, nn = inf.size(); ii < nn; ++ii)
-			if(subsume(inf[ii], tmp[i]))
-				{ subsumed = true; break; }
-		if(cubeStat.isON())
-			cubeStat->finishTime();
-
-		if(!subsumed)
+	for(size_t i = 0, n = indSet.size(); i < n; ++i)
+		if(!checkIsSubsumed(indSet[i], infIdx, infIdx))
 		{
-			if(cubeStat.isON())
-				cubeStat->startTime();
-			for(size_t f = 1, k = frame.size(); f < k; ++f)
-			{
-				size_t ss = 0;
-				for(size_t ii = 0, nn = frame[f].size(); ii < nn; ++ii)
-					if(!subsume(tmp[i], frame[f][ii]))
-					{
-						if(ss < ii)
-							frame[f][ss++] = move(frame[f][ii]);
-						else { assert(ss == ii); ss += 1; }
-					}
-					else frame[f][ii].setMarkA(true);
-				frame[f].resize(ss);
-			}
-			if(cubeStat.isON())
-				cubeStat->finishTime();
-
+			checkSubsumeOthers(indSet[i], 1, infIdx);
 			if(s < i)
-				tmp[s++] = move(tmp[i]);
+				indSet[s++] = move(indSet[i]);
 			else { assert(s == i); s += 1; }
 		}
-	}
 
 	stimulator->incInfClsNum(s);
 	if(isVerboseON(PDR_VERBOSE_STIMU))
 		cout << ", #original clause = " << indSet.size() << ", #added clause = " << s << endl;
-	tmp.resize(s);
-	bool ret = false;
-	for(const PdrCube& c: tmp)
-		if(subsume(c, cube))
-			ret = true;
+	indSet.resize(s);
 
-	for(const PdrCube& c: tmp)
+	for(const PdrCube& c: indSet)
 		addBlockedCubeFrame(FRAME_INF, c);
 	if(cubeStat.isON())
-		for(const PdrCube& c: tmp)
+		for(const PdrCube& c: indSet)
 			cubeStat->incInfCubeNum(),
 			cubeStat->incInfLitNum(c.getSize()),
 			cubeStat->checkMaxCLen(c.getSize());
 
 	if(pushAtBack)
-		for(PdrCube& c: tmp)
-			inf.push_back(move(c));
+		for(const PdrCube& c: indSet)
+			inf.push_back(c);
 	else
 	{
+		vector<PdrCube> tmp(indSet);
 		for(PdrCube& c: inf)
 			tmp.push_back(move(c));
 		inf.swap(tmp);
 	}
-
-	return ret;
 }
 
 PdrChecker*
@@ -715,7 +692,7 @@ PdrChecker::cloneChecker(size_t satLimit)const
 	                                     simType, ordType, oblType, deqType, prpType, genType,
 	                                     toRefineInf, convertInNeedCone, checkSelf, assertFrame, recycleByQuery, convertInNeedFrame,
 	                                     satLimit, vbsOff, noCheckII,
-	                                     noStimu, dummy, dummy);
+	                                     noStimu, dummy, dummy, dummy);
 	checker->disablePrintFrame();
 	return checker;
 }
@@ -725,7 +702,8 @@ PdrChecker::check()
 {
 	switch(checkInt())
 	{
-		case PDR_RESULT_SAT         : cout << "Observe a counter example at frame "         << curFrame << endl; break;
+		case PDR_RESULT_SAT         : cout << "Observe a counter example at frame "         << curFrame << endl;
+		                              printTrace();                                                              break;
 		case PDR_RESULT_UNSAT       : cout << "Property proved at frame "                   << curFrame << endl;
 		                              checkAndPrintIndInv();                                                     break;
 		case PDR_RESULT_ABORT_FRAME : cout << "Cannot determinie the property up to frame " << maxFrame << endl; break;
@@ -1060,6 +1038,9 @@ PdrChecker::propBlockedCubes()
 	if(++curFrame == 1)
 		{ newFrame(); return false; }
 
+	if(stimulator != 0)
+		stimulator->stimulateAtEndOfFrame();
+
 	if(propStat.isON())
 		propStat->doOneTime(),
 		propStat->startTime();
@@ -1181,7 +1162,7 @@ PdrChecker::solveRelative(const PdrTCube& s, SolveType type)const
 	activateFrame(s.getFrame()-1);
 	if(convertInNeedCone) convertCNF(s.getCube());
 	addNextState(s.getCube());
-	return satSolve() ? PdrTCube(FRAME_NULL, type == EXTRACT ? terSim(genTarget(s.getCube())) : PdrCube())
+	return satSolve() ? PdrTCube(FRAME_NULL, type == EXTRACT ? terSim(genTarget(s.getCube()), &(s.getCube())) : PdrCube())
 	                  : PdrTCube(findLowestActPlus1(s.getFrame()-1), unsatGen(s.getCube()));
 }
 
@@ -1193,13 +1174,14 @@ PdrChecker::newFrame()
 	actVar.push_back(solver->newVar());
 	badDequeVec.emplace_back();
 	assert(actVar.size() == frame.size() - 1);
-	assert(actVar.size() == badDequeVec.size());
+	assert(actVar.size() == badDequeVec.size() ||
+	       (oblType == PDR_OBL_PUSH && actVar.size() + 1 == badDequeVec.size()));
 }
 
 void
 PdrChecker::addBlockedCube(const PdrTCube& blockTCube, size_t initF)
 {
-	if(stimulator != 0 && stimulator->stimulate(blockTCube))
+	if(stimulator != 0 && stimulator->stimulateWithOneCube(blockTCube))
 		return;
 
 	size_t k = frame.size() - 1;
@@ -1216,31 +1198,7 @@ PdrChecker::addBlockedCube(const PdrTCube& blockTCube, size_t initF)
 			assert(!frame[f][i].isNone());
 
 	const PdrCube& blockCube = blockTCube.getCube();
-	if(cubeStat.isON())
-		cubeStat->startTime();
-	for(size_t f = initF; f <= k; ++f)
-	{
-		size_t s = 0;
-		for(size_t i = 0, n = frame[f].size(); i < n; ++i)
-		{
-			assert(!frame[f][i].getMarkA());
-			if(!subsume(blockCube, frame[f][i]))
-			{
-				if(s < i)
-					frame[f][s++] = move(frame[f][i]);
-				else { assert(s == i); s += 1; }
-			}
-			else
-			{
-				frame[f][i].setMarkA(true);
-				if(cubeStat.isON())
-					cubeStat->incSubsumeBlockCube();
-			}
-		}
-		frame[f].resize(s);
-	}
-	if(cubeStat.isON())
-		cubeStat->finishTime();
+	checkSubsumeOthers(blockCube, initF, k);
 
 	for(size_t f = 0; f < frame.size(); ++f)
 		for(size_t i = 0; i < frame[f].size(); ++i)
@@ -1320,7 +1278,7 @@ PdrChecker::addBlockedCubeInf()const
 }
 
 PdrCube
-PdrChecker::terSim(const vector<AigGateID>& target)const
+PdrChecker::terSim(const vector<AigGateID>& target, const PdrCube* prevCube)const
 {
 	if(terSimStat.isON())
 	{
@@ -1335,7 +1293,7 @@ PdrChecker::terSim(const vector<AigGateID>& target)const
 		case PDR_SIM_BACKWARD_NORMAL   : terSimBackwardNormal  (target); break;
 		case PDR_SIM_BACKWARD_INTERNAL : terSimBackwardInternal(target); break;
 	}
-	PdrCube c(genCube, true);
+	PdrCube c(genCube, true, prevCube);
 	if(terSimStat.isON())
 	{
 		terSimStat->finishTime();
@@ -1866,22 +1824,25 @@ PdrChecker::checkAndPrintIndInv()
 		{
 			for(unsigned i = 0; i < c.getSize(); ++i)
 				litList.push_back(Lit(checkSolver->getVarInt(getGateID(c.getLit(i)), 0),
-				                  !isInv(c.getLit(i))));
+				                      !isInv(c.getLit(i))));
 			checkSolver->addClause(litList);
 			litList.clear();
 		}
 		cout << (checkSolver->solve() ? "PASS" : "FAIL") << endl;
 
 		cout << "2. Check if the property holds for the set  : " << flush;
-		// TODO, consider the case targetCube is ON
-		checkSolver->convertToCNF(property, 0);
 		checkSolver->clearAssump();
-		checkSolver->addAssump(property, 0, false);
+		if(targetCube.isNone())
+			checkSolver->convertToCNF(property, 0),
+			checkSolver->addAssump(property, 0, false);
+		else
+			for(AigGateLit lit: targetCube)
+				checkSolver->addAssump(getGateID(lit), 0, isInv(lit));
 		cout << (checkSolver->solve() ? "FAIL" : "PASS") << endl;
 
 		Progresser indP("3. Check if the set itself is inductive: ", indInv.size());
 		indP.printLine();
-		size_t notInd = 0;
+		vector<PdrCube> notInd;
 		for(const PdrCube& c: indInv)
 		{
 			checkSolver->clearAssump();
@@ -1889,12 +1850,18 @@ PdrChecker::checkAndPrintIndInv()
 				checkSolver->convertToCNF(getGateID(lit), 1),
 				checkSolver->addAssump(getGateID(lit), 1, isInv(lit));
 			if(checkSolver->solve())
-				notInd += 1;
+				notInd.push_back(c);
 			indP.count();
 		}
 		indP.cleanCurLine();
 		cout << "\r3. Check if the set itself is inductive     : "
-		     << (notInd == 0 ? "PASS" : "FAIL") << endl;
+		     << (notInd.empty() ? "PASS" : "FAIL") << endl;
+		if(!notInd.empty())
+		{
+			cout << "Failed clause:" << endl;
+			for(const PdrCube& c: notInd)
+				cout << c << endl;
+		}
 	}
 
 	if(isVerboseON(PDR_VERBOSE_FINAL))
@@ -1944,16 +1911,19 @@ PdrChecker::selfSubsume(const PdrCube& c1, const PdrCube& c2)const
 }
 
 vector<PdrCube>
-PdrChecker::getCurIndSet(bool toSort)const
+PdrChecker::getCurIndSet(bool toSort)
 {
 	const size_t infFrame = frame.size() - 1;
 	size_t f = 1;
 	for(; f < infFrame && !frame[f].empty(); ++f);
 	for(; f < infFrame &&  frame[f].empty(); ++f);
-	vector<PdrCube> indSet;
-	for(; f <= infFrame; ++f)
-		for(const PdrCube& c: frame[f])
-			indSet.push_back(c);
+	for(size_t ff = infFrame - 1; ff >= f; --ff)
+		for(const PdrCube& c: frame[ff])
+		{
+			checkSubsumeOthers(c, infFrame, infFrame);
+			frame[infFrame].push_back(c);
+		}
+	vector<PdrCube> indSet(getInfFrame());
 	if(toSort)
 		sort(indSet.begin(), indSet.end());
 	return indSet;
@@ -1966,20 +1936,128 @@ PdrChecker::pushToFrameInf(size_t emptyFrame)
 	assert(emptyFrame < inf);
 	for(size_t ff = inf - 1; ff > emptyFrame; --ff)
 	{
-		for(const PdrCube& c: frame[ff])
-		{
-			if(isVerboseON(PDR_VERBOSE_PROP))
+		vector<PdrCube> tmp(frame[ff]);
+		// If purely adding cube to frame Inf, nothing goes wrong since no cube will be subsumed
+		// But if combining with stimulation, some cubes may be subsumed and removed
+		// So we cannot just iterate through the frame since it may be changed
+		for(const PdrCube& c: tmp)
+			if(!c.getMarkA())
 			{
-				cout << RepeatChar('-', 36) << endl
-				     << "Propagate cube by induction from frame " << ff << " to Inf";
-				cout << ":" << c            << endl
-				     << RepeatChar('-', 36) << endl;
+				if(isVerboseON(PDR_VERBOSE_PROP))
+				{
+					cout << RepeatChar('-', 36) << endl
+					     << "Propagate cube by induction from frame " << ff << " to Inf"
+					     << ":" << c            << endl
+					     << RepeatChar('-', 36) << endl;
+				}
+				addBlockedCube(PdrTCube(FRAME_INF, c), inf);
+				if(propStat.isON())
+					propStat->incInfCubeCount();
 			}
-			addBlockedCube(PdrTCube(FRAME_INF, c), inf);
-			if(propStat.isON())
-				propStat->incInfCubeCount();
-		}
 		frame[ff].clear();
+	}
+}
+
+bool
+PdrChecker::checkIsSubsumed(const PdrCube& cube, size_t startFrame, size_t endFrame)const
+{
+	if(cubeStat.isON())
+		cubeStat->startTime();
+	bool ret = false;
+	for(size_t f = startFrame; f <= endFrame; ++f)
+		for(size_t i = 0, n = frame[f].size(); i < n; ++i)
+			if(subsume(frame[f][i], cube))
+				{ ret = true; break; }
+	if(cubeStat.isON())
+		cubeStat->finishTime();
+	return ret;
+}
+
+void
+PdrChecker::checkSubsumeOthers(const PdrCube& cube, size_t startFrame, size_t endFrame)
+{
+	if(cubeStat.isON())
+		cubeStat->startTime();
+	for(size_t f = startFrame; f <= endFrame; ++f)
+	{
+		size_t s = 0;
+		for(size_t i = 0, n = frame[f].size(); i < n; ++i)
+		{
+			assert(!frame[f][i].getMarkA());
+			if(!subsume(cube, frame[f][i]))
+			{
+				if(s < i)
+					frame[f][s++] = move(frame[f][i]);
+				else { assert(s == i); s += 1; }
+			}
+			else
+			{
+				frame[f][i].setMarkA(true);
+				if(cubeStat.isON())
+					cubeStat->incSubsumeBlockCube();
+			}
+		}
+		frame[f].resize(s);
+	}
+	if(cubeStat.isON())
+		cubeStat->finishTime();
+}
+
+void
+PdrChecker::printTrace()const
+{
+	assert(badDequeVec[0].size() == 1);
+	assert(isInitial(badDequeVec[0][0]));
+
+	if(trace)
+	{
+		// TODO, the index, more testing
+		vector<PdrCube> cexTrace;
+		cexTrace.push_back(badDequeVec[0][0]);
+
+		while(true)
+		{
+			const PdrCube& prev = cexTrace.back().getPrevCube();
+			if(prev.isNone()) break;
+			cexTrace.push_back(prev);
+		}
+
+		SolverPtr<CirSolver> traceSolver(ntk);
+		const size_t L = ntk->getLatchNum();
+		Array<bool> curState(L);
+		for(size_t i = 0; i < L; ++i)
+			traceSolver->convertToCNF(ntk->getLatchID(i), 0),
+			traceSolver->convertToCNF(ntk->getLatchID(i), 1),
+			curState[i] = true;
+		for(size_t c = 1, n = cexTrace.size(); c < n; ++c)
+		{
+			for(size_t i = 0; i < L; ++i)
+				traceSolver->addAssump(ntk->getLatchID(i), 0, curState[i]);
+			for(AigGateLit lit: cexTrace[c])
+				traceSolver->addAssump(getGateID(lit), 1, isInv(lit));
+			bool result = traceSolver->solve();
+			assert(result);
+			if(!result)
+				{ cerr << "[Error] The trace cannot be connected! The proof goes wrong!" << endl; return; }
+			traceSolver->reportPI(c-1, 0);
+			traceSolver->clearAssump();
+			for(size_t i = 0; i < L; ++i)
+				curState[i] = !(traceSolver->getValueBool(ntk->getLatchID(i), 1));
+		}
+
+		for(size_t i = 0; i < L; ++i)
+			traceSolver->addAssump(ntk->getLatchID(i), 0, curState[i]);
+		if(targetCube.isNone())
+			traceSolver->convertToCNF(property, 0),
+			traceSolver->addAssump(property, 0, false);
+		else
+			for(AigGateLit lit: targetCube)
+				traceSolver->addAssump(getGateID(lit), 0, isInv(lit));
+		bool result = traceSolver->solve();
+		assert(result);
+		if(!result)
+			{ cerr << "[Error] The trace cannot be connected! The proof goes wrong!" << endl; return; }
+		traceSolver->reportPI(cexTrace.size()-1, 0);
 	}
 }
 

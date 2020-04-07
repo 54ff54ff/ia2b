@@ -27,6 +27,13 @@ inline bool checkNtk(bool report = true)
 }
 AigGate* checkGate(AigGateID, bool = true);
 
+enum AigSimPrintType
+{
+	AIG_SIM_PRINT_ALL,
+	AIG_SIM_PRINT_PO,
+	AIG_SIM_PRINT_LATCH
+};
+
 class AigNtk
 {
 friend class AigParser;
@@ -104,7 +111,7 @@ public:
 	bool balance();
 	bool rmConstLatch();
 
-	bool simulate(const char*, bool, const char*)const;
+	bool simulate(const char*, AigSimPrintType, const char*)const;
 
 	/*====================================*/
 

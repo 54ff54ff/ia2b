@@ -114,6 +114,7 @@ enum PdrStimuType
 	PDR_STIMU_LOCAL_INF,
 	PDR_STIMU_LOCAL_ALL,
 	PDR_STIMU_LOCAL_MIX,
+	PDR_STIMU_HALF,
 	PDR_STIMU_NONE
 };
 
@@ -237,7 +238,7 @@ friend ostream& operator<<(ostream&, const PdrCube&);
 
 public:
 	PdrCube(): uint32Ptr(0) {}
-	explicit PdrCube(const vector<AigGateLit>&, bool = false);
+	explicit PdrCube(const vector<AigGateLit>&, bool = false, const PdrCube* = 0);
 	~PdrCube() { clean(); }
 
 	PdrCube(const PdrCube& c): uint32Ptr(c.uint32Ptr) { if(!isNone()) incCount(); }
@@ -255,12 +256,17 @@ public:
 	bool operator< (const PdrCube&)const;
 	bool operator==(const PdrCube&)const;
 
+	void allocMem(unsigned s)
+		{ uint64Ptr = (size_t*)operator new(sizeof(unsigned) * s + sizeof(size_t) * 3) + 3; }
+
 	void setSize(unsigned s) { *(uint32Ptr - 1) = s; }
 	void setLit(unsigned i, AigGateLit lit) { *(uint32Ptr + i) = lit; }
 	void calAbstract(unsigned i) { *(uint64Ptr - 2) |= (size_t(1) << (getGateID(getLit(i)) & 63)); }
 	void initAbstract() { *(uint64Ptr - 2) = 0; }
 
 	unsigned getSize()const  { return *(uint32Ptr - 1); }
+	// We use gate ID instead of latch index here
+	// Since we preserve the flexibility to use internal signal in representation some day
 	AigGateLit getLit(unsigned i)const { return *(uint32Ptr + i); }
 	size_t getAbs()const { return *(uint64Ptr - 2); }
 
@@ -269,7 +275,7 @@ public:
 	void incCount() { *(uint16Ptr - 3) += 1; }
 	void decCount() { *(uint16Ptr - 3) -= 1; }
 	bool toDelete()const { return isCount(0); }
-	void clear() { operator delete(getOriPtr()); }
+	void clear() { getPrevCube().~PdrCube(); operator delete(getOriPtr()); }
 	void decAndCheck() { decCount(); if(toDelete()) clear(); }
 	void clean() { if(!isNone()) decAndCheck(); }
 	void reset() { clean(); uint32Ptr = 0; }
@@ -278,6 +284,10 @@ public:
 	void setMarkA(bool value) { *(boolPtr - 8) = value; }
 	bool getMarkB()const { return *(boolPtr - 7); }
 	void setMarkB(bool value) { *(boolPtr - 7) = value; }
+
+	void setPrevCube(const PdrCube* c) { if(c == 0) new (cubePtr - 3) PdrCube();
+	                                     else       new (cubePtr - 3) PdrCube(*c); }
+	PdrCube& getPrevCube()const { return *(cubePtr - 3); }
 
 	bool isNone()const { return uint32Ptr == 0; }
 	void* getOriPtr()const { return uint64Ptr - 3; }
@@ -302,6 +312,7 @@ private:
 		size_t*          uint64Ptr;
 		PdrCube*         cubePtr; };
 };
+static_assert(sizeof(PdrCube) == 8);
 
 class PdrTCube
 {
@@ -326,7 +337,7 @@ public:
 	PdrChecker(AigNtk*, size_t, bool, size_t, size_t, size_t, size_t,
 	           PdrSimType, PdrOrdType, PdrOblType, PdrDeqType, PdrPrpType, PdrGenType,
 	           bool, bool, bool, bool, bool, bool, size_t, size_t, bool,
-	           PdrStimuType, size_t, size_t);
+	           PdrStimuType, size_t, size_t, size_t);
 	~PdrChecker();
 
 // For stimulator (Start)
@@ -335,9 +346,10 @@ protected:
 		class PdrStimulatorLocal;
 			class PdrStimulatorLocalInfAll;
 			class PdrStimulatorLocalMix;
+		class PdrStimulatorHalf;
 
-	PdrStimulator* getStimulator(PdrStimuType, bool, size_t, size_t);
-	bool mergeInf(const vector<PdrCube>&, bool, const PdrCube&);
+	PdrStimulator* getStimulator(PdrStimuType, bool, size_t, size_t, size_t);
+	void mergeInf(vector<PdrCube>&, bool);
 	void disablePrintFrame() { assert(isVerboseON(PDR_VERBOSE_FRAME));
 	                           verbosity &= ~getPdrVbsMask(PDR_VERBOSE_FRAME); }
 	PdrChecker* cloneChecker(size_t)const;
@@ -374,7 +386,7 @@ protected:
 	void addBlockedCubeFrame(size_t)const;
 	void addBlockedCubeInf()const;
 
-	PdrCube terSim                (const vector<AigGateID>&)const;
+	PdrCube terSim                (const vector<AigGateID>&, const PdrCube* = 0)const;
 	void    terSimForwardNormal   (const vector<AigGateID>&)const;
 	void    terSimForwardEvent    (const vector<AigGateID>&)const;
 	void    terSimBackwardNormal  (const vector<AigGateID>&)const;
@@ -418,8 +430,11 @@ protected:
 	size_t getCurRecycleNum()const { return recycleByQuery ? satQueryTime : unusedVarNum; }
 	bool subsume(const PdrCube&, const PdrCube&)const;
 	AigGateLit selfSubsume(const PdrCube&, const PdrCube&)const;
-	vector<PdrCube> getCurIndSet(bool)const;
+	vector<PdrCube> getCurIndSet(bool);
 	void pushToFrameInf(size_t);
+	bool checkIsSubsumed(const PdrCube&, size_t, size_t)const;
+	void checkSubsumeOthers(const PdrCube&, size_t, size_t);
+	void printTrace()const;
 
 protected:
 	PdrMainType  mainType;
@@ -427,8 +442,11 @@ protected:
 	size_t  curFrame;
 	size_t  maxFrame;
 
-	PdrCube         targetCube;
-	PdrStimulator*  stimulator;
+	// Just a workaround, for binary aig format, the latches are nearby
+	Array<ThreeValue>  initState;
+	unsigned           initIdBase;
+	PdrCube            targetCube;
+	PdrStimulator*     stimulator;
 
 	mutable size_t  satQueryTime;
 	mutable size_t  unusedVarNum;
@@ -522,22 +540,24 @@ protected:
 class PdrChecker::PdrStimulator
 {
 public:
-	PdrStimulator(PdrChecker* c, bool statON)
-	: checker(c), stimuStat(statON) {}
+	PdrStimulator(PdrChecker* c, size_t satL, bool statON)
+	: checker(c), satLimit(satL), stimuStat(statON) {}
 	virtual ~PdrStimulator();
 
-	virtual bool stimulate(const PdrTCube&) = 0;
+	virtual bool stimulateWithOneCube (const PdrTCube&) { return false; }
+	virtual void stimulateAtEndOfFrame() {}
 
 	void incInfClsNum(size_t n)
 		{ if(stimuStat.isON()) stimuStat->incInfClsNum(n); }
 
 protected:
-	bool solveCand(const PdrCube&, size_t, const PdrCube&);
+	bool solveCand(const PdrCube&, unsigned, const PdrCube&);
 	bool notFailed(const PdrCube& c)const { return notInList(failCubes, c); }
 	void addToFailed(const PdrCube& c) { failCubes.push_back(c); }
 
 protected:
 	PdrChecker*            checker;
+	size_t                 satLimit;
 	vector<PdrCube>        failCubes;
 	StatPtr<PdrStimuStat>  stimuStat;
 };
@@ -545,8 +565,8 @@ protected:
 class PdrChecker::PdrStimulatorLocal : public PdrStimulator
 {
 public:
-	PdrStimulatorLocal(PdrChecker* c, bool statON, size_t bn, size_t mn)
-	: PdrStimulator(c, statON), backtrackNum(bn), matchNum(mn) { assert(bn >= mn); }
+	PdrStimulatorLocal(PdrChecker* c, bool statON, size_t bn, size_t mn, size_t sl)
+	: PdrStimulator(c, sl, statON), backtrackNum(bn), matchNum(mn) { assert(bn >= mn && mn > 0); }
 
 protected:
 	size_t  backtrackNum;
@@ -556,10 +576,10 @@ protected:
 class PdrChecker::PdrStimulatorLocalInfAll : public PdrStimulatorLocal
 {
 public:
-	PdrStimulatorLocalInfAll(PdrChecker* c, bool statON, size_t bn, size_t mn, bool onlyI)
-	: PdrStimulatorLocal(c, statON, bn, mn), onlyInf(onlyI) {}
+	PdrStimulatorLocalInfAll(PdrChecker* c, bool statON, size_t bn, size_t mn, size_t sl, bool onlyI)
+	: PdrStimulatorLocal(c, statON, bn, mn, sl), onlyInf(onlyI) {}
 
-	bool stimulate(const PdrTCube&);
+	bool stimulateWithOneCube(const PdrTCube&);
 
 protected:
 	bool  onlyInf;
@@ -568,14 +588,27 @@ protected:
 class PdrChecker::PdrStimulatorLocalMix : public PdrStimulatorLocal
 {
 public:
-	PdrStimulatorLocalMix(PdrChecker* c, bool statON, size_t bn, size_t mn)
-	: PdrStimulatorLocal(c, statON, bn, mn), curIdx(0) {}
+	PdrStimulatorLocalMix(PdrChecker* c, bool statON, size_t bn, size_t mn, size_t sl)
+	: PdrStimulatorLocal(c, statON, bn, mn, sl), curIdx(0) {}
 
-	bool stimulate(const PdrTCube&);
+	bool stimulateWithOneCube(const PdrTCube&);
 
 protected:
 	size_t           curIdx;
 	vector<PdrCube>  clsCache;
+};
+
+class PdrChecker::PdrStimulatorHalf : public PdrStimulator
+{
+public:
+	PdrStimulatorHalf(PdrChecker* c, bool statON, size_t on, size_t mn, size_t sl)
+	: PdrStimulator(c, sl, statON), observeNum(on), matchNum(mn) { assert(on > 0 && mn >= 2); }
+
+	void stimulateAtEndOfFrame();
+
+protected:
+	size_t  observeNum;
+	size_t  matchNum;
 };
 
 #endif

@@ -190,6 +190,8 @@ def checkAbcMC(log):
 				print(line)
 				return [getGGG(5)]
 			result[0] = "COMB"
+		elif l[:15] == "Reached timeout":
+			result[0] = "TIMEOUT"
 	if result[0] == None:
 		print(line)
 		return [getGGG(6)]
@@ -450,7 +452,7 @@ methodToParam = \
 	            "int {}\n"
 	            "time\n"
 	            "quit\n",
-	            "../LSV/hehe/abc/abc",
+	            "../LSV/hehe/abc/abc_16",
 	            checkAbcMC],
 	"Ia2bPdrRun" : ["read aig {}\n"
 	                "{}\n"

@@ -266,7 +266,7 @@ CmdMgr::addHistoryAndExecCmd()
 		tmp = findFirstSemicolon(tmp2);
 		if(tmp == tmp2)
 		{
-			cerr << "[Error] Only spaces before the semicolon!" << endl;
+			cerr << "[Error] No character except space before the semicolon!" << endl;
 			return CMD_EXEC_NOP;
 		}
 		cmds.push_back(tmp2);

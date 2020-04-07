@@ -340,31 +340,41 @@ AigSimulator::simByEvent()
 }
 
 void
+AigSimulator::simAllLatchSynch()
+{
+	const size_t L = ntk->getLatchNum();
+	for(size_t i = 0; i < L; ++i)
+		nextState[i] = simOneCOValue(ntk->getLatchNorm(i));
+	for(size_t i = 0; i < L; ++i)
+		simValue[ntk->getLatchID(i)] = nextState[i];
+}
+
+void
 AigSimulator::printAllGate(ostream& os)const
 {
 	for(size_t i = 0, M = ntk->getMaxGateNum(); i < M; ++i)
-		os << getValue(i);
+		os << getSymbol(getValue(i));
 }
 
 void
 AigSimulator::printAllInput(ostream& os)const
 {
 	for(size_t i = 0, I = ntk->getInputNum(); i < I; ++i)
-		os << getInputValue(i);
+		os << getSymbol(getInputValue(i));
 }
 
 void
 AigSimulator::printAllLatch(ostream& os)const
 {
 	for(size_t i = 0, L = ntk->getLatchNum(); i < L; ++i)
-		os << getLatchValue(i);
+		os << getSymbol(getLatchValue(i));
 }
 
 void
 AigSimulator::printAllOutput(ostream& os)const
 {
 	for(size_t i = 0, O = ntk->getOutputNum(); i < O; ++i)
-		os << getOutputValue(i);
+		os << getSymbol(getOutputValue(i));
 }
 
 void
@@ -425,6 +435,8 @@ void
 AigSimulator::initEventList()
 {
 	assert(level.isON());
+	assert(eventList.empty());
+	assert(hasEvent.empty());
 	eventList.init(level.getMaxLevel()+1);
 	const size_t M = ntk->getMaxGateNum();
 	hasEvent.init(M);

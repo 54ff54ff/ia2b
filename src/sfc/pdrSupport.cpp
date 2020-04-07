@@ -37,13 +37,12 @@ PdrCube::exactOneDiff(const PdrCube& c)const
 	}
 	else
 	{
+		//TODO
 	}
 
 	if(diffIdx == MAX_SIZE_T)
 		{ assert(*this == c); return ret; }
-	ret.uint32Ptr = (unsigned*)operator new(sizeof(unsigned) * (s - 1) +
-	                                        sizeof(size_t)   * 3);
-	ret.uint64Ptr += 3;
+	ret.allocMem(s-1);
 	ret.initCount();
 	ret.setSize(s-1);
 	ret.initAbstract();
@@ -55,6 +54,7 @@ PdrCube::exactOneDiff(const PdrCube& c)const
 	for(i = 1; i < s-1; ++i)
 		assert(ret.getLit(i-1) < ret.getLit(i));
 	ret.incCount();
+	ret.setPrevCube(0);
 	return ret;
 }
 
@@ -71,13 +71,17 @@ PdrChecker::PdrStimulator::~PdrStimulator()
 }
 
 bool
-PdrChecker::PdrStimulator::solveCand(const PdrCube& candCube, size_t satLimit, const PdrCube& oriCube)
+PdrChecker::PdrStimulator::solveCand(const PdrCube& candCube, unsigned mergeType, const PdrCube& oriCube)
 {
 	sfcMsg.unsetActive();
 	if(stimuStat.isON())
 		stimuStat->startTime();
 	PdrChecker* stimuChecker = checker->cloneChecker(satLimit);
 	stimuChecker->setTargetCube(candCube);
+
+//for(const PdrCube& infCube: checker->getInfFrame())
+//	stimuChecker->addBlockedCube(PdrTCube(FRAME_INF, infCube));
+
 	cout << "Try " << candCube << flush;
 	size_t r;
 	switch(stimuChecker->checkInt())
@@ -90,10 +94,22 @@ PdrChecker::PdrStimulator::solveCand(const PdrCube& candCube, size_t satLimit, c
 	cout << " -> " << resultStr[r] << endl;
 	if(checker->isVerboseON(PDR_VERBOSE_STIMU))
 		cout << "#SAT query = " << stimuChecker->totalSatQuery;
-	constexpr unsigned mergeType = 0b111;
-	bool ret = mergeType & (unsigned(1) << r)
-	         ? checker->mergeInf(stimuChecker->getCurIndSet(false), true, oriCube)
-	         : false;
+	bool ret = false;
+	if(mergeType & (unsigned(1) << r))
+	{
+		vector<PdrCube> indSet = stimuChecker->getCurIndSet(false);
+		checker->mergeInf(indSet, true);
+		if(r == 0)
+		{
+			ret = true;
+			vector<PdrCube> tmp{candCube};
+			checker->mergeInf(tmp, true);
+		}
+		else if(!oriCube.isNone())
+			for(const PdrCube& c: indSet)
+				if(checker->subsume(c, oriCube))
+					{ ret = true; break; }
+	}
 
 streamsize ss = cout.precision();
 cout << fixed << setprecision(3);
@@ -113,7 +129,7 @@ cout << setprecision(ss);
 }
 
 bool
-PdrChecker::PdrStimulatorLocalInfAll::stimulate(const PdrTCube& tc)
+PdrChecker::PdrStimulatorLocalInfAll::stimulateWithOneCube(const PdrTCube& tc)
 {
 	if(tc.getFrame() != FRAME_INF && onlyInf)
 		return false;
@@ -152,7 +168,7 @@ PdrChecker::PdrStimulatorLocalInfAll::stimulate(const PdrTCube& tc)
 	bool result = false;
 	for(const auto&[candCube, candNum]: candidate)
 		if(candNum >= matchNum)
-			result = solveCand(candCube, 300, blockCube) || result;
+			result = solveCand(candCube, 0b111, blockCube) || result;
 /*
 	for(const auto&[candCube, candNum]: candidate)
 		if(candNum >= matchNum)
@@ -183,7 +199,7 @@ PdrChecker::PdrStimulatorLocalInfAll::stimulate(const PdrTCube& tc)
 }
 
 bool
-PdrChecker::PdrStimulatorLocalMix::stimulate(const PdrTCube& tc)
+PdrChecker::PdrStimulatorLocalMix::stimulateWithOneCube(const PdrTCube& tc)
 {
 	const PdrCube& blockCube = tc.getCube();
 	vector<pair<PdrCube, size_t>> candidate;
@@ -203,7 +219,7 @@ PdrChecker::PdrStimulatorLocalMix::stimulate(const PdrTCube& tc)
 	bool result = false;
 	for(const auto&[candCube, candNum]: candidate)
 		if(candNum >= matchNum)
-			result = solveCand(candCube, 300, blockCube) || result;
+			result = solveCand(candCube, 0b111, blockCube) || result;
 	if(!result)
 	{
 		if(clsCache.size() < backtrackNum)
@@ -216,6 +232,44 @@ PdrChecker::PdrStimulatorLocalMix::stimulate(const PdrTCube& tc)
 		}
 	}
 	return result;
+}
+
+void
+PdrChecker::PdrStimulatorHalf::stimulateAtEndOfFrame()
+{
+	const vector<PdrCube>& inf = checker->getInfFrame();
+	
+	vector<pair<PdrCube, size_t>> candidate;
+	for(size_t i = 0, s = inf.size(); i < s; ++i)
+		for(size_t j   = i + 1,
+		           end = i + observeNum > s ? s : i + observeNum; j < end; ++j)
+		{
+			PdrCube common = inf[i].exactOneDiff(inf[j]);
+			if(!common.isNone() && notFailed(common))
+			{
+				if(checker->isInitial(common))
+					addToFailed(common);
+				else
+				{
+					bool newCand = true;
+					for(const auto& candPair: candidate)
+						if(candPair.first == common)
+							{ newCand = false; break; }
+					if(newCand)
+					{
+						size_t num = 0;
+						for(const PdrCube& c: inf)
+							if(common.subsume(c))
+								num += 1;
+						candidate.emplace_back(common, num);
+					}
+				}
+			}
+		}
+
+	for(const auto&[candCube, candNum]: candidate)
+		if(candNum >= matchNum)
+			solveCand(candCube, 0b111, PdrCube());
 }
 
 }

@@ -37,8 +37,9 @@ CmdClass(SimpNetwork, CMD_TYPE_SYNTHESIS, 8, "-COMpress",   4,
                                              "-Balance",    2,
                                              "-CONStant",   5);
 
-CmdClass(SimuNetwork, CMD_TYPE_VERIFICATION, 2, "-All",    2,
-                                                "-Output", 2);
+CmdClass(SimuNetwork, CMD_TYPE_VERIFICATION, 3, "-All",    2,
+                                                "-Output", 2,
+                                                "-Latch",  2);
 
 CmdClass(PrintConeM, CMD_TYPE_EXPERIMENT, 0);
 CmdClass(PrintConeS, CMD_TYPE_EXPERIMENT, 1, "-Depth", 2);
@@ -408,10 +409,11 @@ SimpNetworkCmd::getHelpStr()const
 
 /*========================================================================
 	SIMUlation NEtwork <<(string patternFile)>
-	                    [-All] [-Output (string outputFile)]>
+	                    [-All | -Latch] [-Output (string outputFile)]>
 --------------------------------------------------------------------------
 	0: -All,    2
 	1: -Output, 2
+	2: -Latch,  2
 ========================================================================*/
 
 CmdExecStatus
@@ -420,11 +422,15 @@ SimuNetworkCmd::exec(char* options)const
 	PureStrList tokens = breakToTokens(options);
 	if(tokens.size() < 1)
 		return errorOption(CMD_OPT_MISSING);
-	bool all = false;
+	AigSimPrintType printType = AIG_SIM_PRINT_PO;
 	const char* outputFileName = 0;
 	for(size_t i = 1; i < tokens.size(); ++i)
 		if(optMatch<0>(tokens[i]))
-			{ if(all) return errorOption(CMD_OPT_EXTRA, tokens[i]); all = true; }
+		{
+			if(printType != AIG_SIM_PRINT_PO)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			printType = AIG_SIM_PRINT_ALL;
+		}
 		else if(optMatch<1>(tokens[i]))
 		{
 			if(outputFileName != 0)
@@ -433,6 +439,12 @@ SimuNetworkCmd::exec(char* options)const
 				return errorOption(CMD_OPT_MISSING);
 			outputFileName = tokens[i];
 		}
+		else if(optMatch<2>(tokens[i]))
+		{
+			if(printType != AIG_SIM_PRINT_PO)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			printType = AIG_SIM_PRINT_LATCH;
+		}
 		else return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
 	if(!checkNtk()) return CMD_EXEC_ERROR_INT;
 	WrapStr s1(replaceHomeDir(tokens[0]), false);
@@ -440,14 +452,14 @@ SimuNetworkCmd::exec(char* options)const
 	WrapStr s2;
 	if(outputFileName != 0) s2.setStr(replaceHomeDir(outputFileName), false);
 	if((const char*)s2) outputFileName = (const char*)s2;
-	return aigNtk->simulate(patternFileName, all, outputFileName) ? CMD_EXEC_DONE : CMD_EXEC_ERROR_INT;
+	return aigNtk->simulate(patternFileName, printType, outputFileName) ? CMD_EXEC_DONE : CMD_EXEC_ERROR_INT;
 }
 
 const char*
 SimuNetworkCmd::getUsageStr()const
 {
 	return "<<(string patternFile)>\n"
-	       " [-All] [-Output (string outputFile)]>\n";
+	       " [-All | -Latch] [-Output (string outputFile)]>\n";
 }
 
 const char*
