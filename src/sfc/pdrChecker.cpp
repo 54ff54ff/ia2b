@@ -212,6 +212,7 @@ PdrCube::PdrCube(const vector<AigGateLit>& litList, bool toSort, const PdrCube* 
 	for(unsigned i = 1; i < s; ++i)
 		assert(getLit(i-1) < getLit(i));
 	incCount();
+	initMark();
 	setPrevCube(prevCube);
 }
 
@@ -354,15 +355,15 @@ PdrCube::selfSubsumeComplex(const PdrCube& c)const
 PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t timeout, size_t maxF, size_t recycleN, size_t stats,
                        PdrSimType simT, PdrOrdType ordT, PdrOblType oblT, PdrDeqType deqT, PdrPrpType prpT, PdrGenType genT,
                        bool rInf, bool cInNeedC, bool cSelf, bool assertF, bool recycleBQ, bool cInNeedF,
-                       size_t satQL, size_t _verbosity, bool checkII,
-                       PdrStimuType stimuType, size_t stimuNum1, size_t stimuNum2, size_t stimuNum3)
+                       size_t satQL, size_t oblL, size_t _verbosity, bool checkII,
+                       PdrStimuType stimuT, PdrShareType shareT, size_t stimuNum1, size_t stimuNum2, size_t stimuNum3)
 : SafetyBNChecker    (ntkToCheck, outputIdx, _trace, timeout)
 , mainType           (PDR_MAIN_NORMAL)
 , curFrame           (0)
 , maxFrame           (maxF)
 , initState          ()
 , targetCube         ()
-, stimulator         (getStimulator(stimuType, isPdrStatON(stats, PDR_STAT_STIMU),
+, stimulator         (getStimulator(stimuT, shareT, isPdrStatON(stats, PDR_STAT_STIMU),
                                     stimuNum1, stimuNum2, stimuNum3))
 , satQueryTime       (0)
 , unusedVarNum       (0)
@@ -396,7 +397,9 @@ PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t
 , frameConverted     (0)
 
 , totalSatQuery      (0)
-, satQueryLimit      (satQL),numConf(0), numDeci(0), maxObl(0), maxTree(0)
+, satQueryLimit      (satQL)
+, numObl             (0)
+, numOblLimit        (oblL),numConf(0), numDeci(0), maxObl(0), maxTree(0)
 , verbosity          (_verbosity | getPdrVbsMask(PDR_VERBOSE_FRAME))
 {
 	sfcMsg << "Max Frame  : " << maxFrame << endl
@@ -404,6 +407,9 @@ PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t
 	       << "Detail     : ";
 	sfcMsg << "Number of total SAT query limit = ";
 	if(satQueryLimit == 0) sfcMsg << "Infinity"; else sfcMsg << satQueryLimit;
+	sfcMsg << endl;
+	sfcMsg << "             Number of generated obligation limit = ";
+	if(numOblLimit == 0) sfcMsg << "Infinity"; else sfcMsg << numOblLimit;
 	sfcMsg << endl;
 	sfcMsg << "             Number of " << (recycleByQuery ? "SAT query times" : "unused variable") << " to recycle the solver = ";
 	if(recycleNum == 0) sfcMsg << "Infinity"; else sfcMsg << recycleNum;
@@ -484,27 +490,39 @@ PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t
 	if(checkIndInv)
 		sfcMsg << "             ** Check the inductive invariant at the end if found" << endl;
 
-	if(stimuType != PDR_STIMU_NONE)
+	if(stimuT != PDR_STIMU_NONE)
 	{
 		sfcMsg << "Stimulate  : ";
-		switch(stimuType)
+		switch(stimuT)
 		{
-			case PDR_STIMU_LOCAL_INF : sfcMsg << "Observe only part of the clauses, focus on inifinte frame, "
+			case PDR_STIMU_LOCAL_INF : sfcMsg << "Observe only part of the clauses, focus on inifinte frame" << endl
+			                                  << "             "
 											  << "backtrackNum = " << stimuNum1
 			                                  << ", matchNum = "   << stimuNum2; break;
-			case PDR_STIMU_LOCAL_ALL : sfcMsg << "Observe only part of the clauses, focus on all frames, "
+			case PDR_STIMU_LOCAL_ALL : sfcMsg << "Observe only part of the clauses, focus on all frames" << endl
+			                                  << "             "
 											  << "backtrackNum = " << stimuNum1
 			                                  << ", matchNum = "   << stimuNum2; break;
-			case PDR_STIMU_LOCAL_MIX : sfcMsg << "Observe only part of the clauses, focus on mixed frames, "
+			case PDR_STIMU_LOCAL_MIX : sfcMsg << "Observe only part of the clauses, focus on mixed frames" << endl
+			                                  << "             "
 											  << "backtrackNum = " << stimuNum1
 			                                  << ", matchNum = "   << stimuNum2; break;
-			case PDR_STIMU_HALF      : sfcMsg << "Observe neighboring region of each clause, focus on infinite frame, "
+			case PDR_STIMU_HALF      : sfcMsg << "Observe neighboring region of each clause, focus on infinite frame" << endl
+			                                  << "             "
 											  << "observeNum = "   << stimuNum1
 			                                  << ", matchNum = "   << stimuNum2; break;
 			case PDR_STIMU_NONE: assert(false);
 		}
-		cout << ", satLimit = "; if(stimuNum3 == 0) cout << "Infinity"; else cout << stimuNum3; cout << endl;
+		sfcMsg << ", satLimit = "; if(stimuNum3 == 0) sfcMsg << "Infinity"; else sfcMsg << stimuNum3; sfcMsg << endl;
+		sfcMsg << "             ";
+		switch(shareT)
+		{
+			case PDR_SHARE_NONE : sfcMsg << "Reuse nothing, start from the beginning"; break;
+			case PDR_SHARE_INF  : sfcMsg << "Reuse the infinite frame";                break;
+		}
+		sfcMsg << endl;
 	}
+	else assert(shareT == PDR_SHARE_NONE);
 
 	/* Prepare for checking */
 	genCube.reserve(ntk->getLatchNum());
@@ -574,7 +592,6 @@ PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t
 	#endif
 
 	#ifdef CheckOblCommonPart
-	numObl          = 0;
 	idxOfLastChange = 0;
 	#endif
 }
@@ -620,15 +637,15 @@ PdrChecker::~PdrChecker()
 }
 
 PdrChecker::PdrStimulator*
-PdrChecker::getStimulator(PdrStimuType stimuType, bool statON,
+PdrChecker::getStimulator(PdrStimuType stimuT, PdrShareType shareT, bool statON,
                           size_t stimuNum1, size_t stimuNum2, size_t stimuNum3)
 {
-	switch(stimuType)
+	switch(stimuT)
 	{
-		case PDR_STIMU_LOCAL_INF : return (new PdrStimulatorLocalInfAll(this, statON, stimuNum1, stimuNum2, stimuNum3, true));
-		case PDR_STIMU_LOCAL_ALL : return (new PdrStimulatorLocalInfAll(this, statON, stimuNum1, stimuNum2, stimuNum3, false));
-		case PDR_STIMU_LOCAL_MIX : return (new PdrStimulatorLocalMix   (this, statON, stimuNum1, stimuNum2, stimuNum3));
-		case PDR_STIMU_HALF      : return (new PdrStimulatorHalf       (this, statON, stimuNum1, stimuNum2, stimuNum3));
+		case PDR_STIMU_LOCAL_INF : return (new PdrStimulatorLocalInfAll(this, shareT, statON, stimuNum1, stimuNum2, stimuNum3, true));
+		case PDR_STIMU_LOCAL_ALL : return (new PdrStimulatorLocalInfAll(this, shareT, statON, stimuNum1, stimuNum2, stimuNum3, false));
+		case PDR_STIMU_LOCAL_MIX : return (new PdrStimulatorLocalMix   (this, shareT, statON, stimuNum1, stimuNum2, stimuNum3));
+		case PDR_STIMU_HALF      : return (new PdrStimulatorHalf       (this, shareT, statON, stimuNum1, stimuNum2, stimuNum3));
 
 		default                  : assert(false);
 		case PDR_STIMU_NONE      : return 0;
@@ -683,16 +700,18 @@ PdrChecker::cloneChecker(size_t satLimit)const
 	constexpr size_t noTimeout     = 0;
 	constexpr size_t highMaxFrame  = 50000;
 	constexpr size_t noStat        = 0;
+	constexpr size_t noOblLimit    = 0;
 	constexpr size_t vbsOff        = 0;
 	constexpr bool   noCheckII     = false;
 
 	constexpr PdrStimuType noStimu = PDR_STIMU_NONE;
+	constexpr PdrShareType noShare = PDR_SHARE_NONE;
 	constexpr size_t       dummy   = 0;
 	PdrChecker* checker = new PdrChecker(ntk, fakeOutputIdx, noTrace, noTimeout, highMaxFrame, recycleNum, noStat,
 	                                     simType, ordType, oblType, deqType, prpType, genType,
 	                                     toRefineInf, convertInNeedCone, checkSelf, assertFrame, recycleByQuery, convertInNeedFrame,
-	                                     satLimit, vbsOff, noCheckII,
-	                                     noStimu, dummy, dummy, dummy);
+	                                     satLimit, noOblLimit, vbsOff, noCheckII,
+	                                     noStimu, noShare, dummy, dummy, dummy);
 	checker->disablePrintFrame();
 	return checker;
 }
@@ -1162,7 +1181,7 @@ PdrChecker::solveRelative(const PdrTCube& s, SolveType type)const
 	activateFrame(s.getFrame()-1);
 	if(convertInNeedCone) convertCNF(s.getCube());
 	addNextState(s.getCube());
-	return satSolve() ? PdrTCube(FRAME_NULL, type == EXTRACT ? terSim(genTarget(s.getCube()), &(s.getCube())) : PdrCube())
+	return satSolve() ? PdrTCube(FRAME_NULL, type == EXTRACT ? terSim(genTarget(s.getCube()), trace ? &(s.getCube()) : 0) : PdrCube())
 	                  : PdrTCube(findLowestActPlus1(s.getFrame()-1), unsatGen(s.getCube()));
 }
 
@@ -1294,6 +1313,7 @@ PdrChecker::terSim(const vector<AigGateID>& target, const PdrCube* prevCube)cons
 		case PDR_SIM_BACKWARD_INTERNAL : terSimBackwardInternal(target); break;
 	}
 	PdrCube c(genCube, true, prevCube);
+	numObl += 1;
 	if(terSimStat.isON())
 	{
 		terSimStat->finishTime();
@@ -1586,6 +1606,8 @@ PdrChecker::checkBreak(const char* funcName, bool blockNow)const
 	{
 		if(satQueryLimit != 0 && totalSatQuery >= satQueryLimit)
 			sfcMsg << "Out of SAT query limit!" << endl;
+		else if(numOblLimit != 0 && numObl >= numOblLimit)
+			sfcMsg << "Out of generated obligation limit!" << endl;
 		else return;
 	}
 	else return;
@@ -1913,16 +1935,7 @@ PdrChecker::selfSubsume(const PdrCube& c1, const PdrCube& c2)const
 vector<PdrCube>
 PdrChecker::getCurIndSet(bool toSort)
 {
-	const size_t infFrame = frame.size() - 1;
-	size_t f = 1;
-	for(; f < infFrame && !frame[f].empty(); ++f);
-	for(; f < infFrame &&  frame[f].empty(); ++f);
-	for(size_t ff = infFrame - 1; ff >= f; --ff)
-		for(const PdrCube& c: frame[ff])
-		{
-			checkSubsumeOthers(c, infFrame, infFrame);
-			frame[infFrame].push_back(c);
-		}
+	collectInd();
 	vector<PdrCube> indSet(getInfFrame());
 	if(toSort)
 		sort(indSet.begin(), indSet.end());
@@ -2011,7 +2024,7 @@ PdrChecker::printTrace()const
 
 	if(trace)
 	{
-		// TODO, the index, more testing
+		// TODO, more testing
 		vector<PdrCube> cexTrace;
 		cexTrace.push_back(badDequeVec[0][0]);
 
@@ -2059,6 +2072,21 @@ PdrChecker::printTrace()const
 			{ cerr << "[Error] The trace cannot be connected! The proof goes wrong!" << endl; return; }
 		traceSolver->reportPI(cexTrace.size()-1, 0);
 	}
+}
+
+void
+PdrChecker::collectInd()
+{
+	const size_t infFrame = frame.size() - 1;
+	size_t f = 1;
+	for(; f < infFrame && !frame[f].empty(); ++f);
+	for(; f < infFrame &&  frame[f].empty(); ++f);
+	for(size_t ff = infFrame - 1; ff >= f; --ff)
+		for(const PdrCube& c: frame[ff])
+		{
+			checkSubsumeOthers(c, infFrame, infFrame);
+			frame[infFrame].push_back(c);
+		}
 }
 
 #ifdef UsePatternCheckSAT
@@ -2303,7 +2331,7 @@ PdrChecker::checkOblCommonPart()const
 {
 	sort(genCube.begin(), genCube.end());
 	size_t oriSize = commonPart.size();
-	if(++numObl == 1)
+	if(numObl == 1)
 		commonPart = genCube;
 	else
 	{

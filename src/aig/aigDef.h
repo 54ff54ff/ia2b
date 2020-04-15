@@ -34,6 +34,7 @@ constexpr AigGateID UNDEF_GATEID = numeric_limits<AigGateID>::max();
 using AigGateLit = unsigned;
 inline AigGateID getGateID(AigGateLit lit) { return lit >> 1; }
 inline bool isInv(AigGateLit lit) { return lit & 1; }
+inline unsigned isInvNum(AigGateLit lit) { return lit & 1; }
 inline AigGateLit makeToLit(AigGateID id, bool inv) { return (id << 1) | AigGateLit(inv); }
 
 constexpr AigGateLit UNDEF_GATELIT = numeric_limits<AigGateLit>::max();

@@ -54,6 +54,7 @@ PdrCube::exactOneDiff(const PdrCube& c)const
 	for(i = 1; i < s-1; ++i)
 		assert(ret.getLit(i-1) < ret.getLit(i));
 	ret.incCount();
+	ret.initMark();
 	ret.setPrevCube(0);
 	return ret;
 }
@@ -79,10 +80,19 @@ PdrChecker::PdrStimulator::solveCand(const PdrCube& candCube, unsigned mergeType
 	PdrChecker* stimuChecker = checker->cloneChecker(satLimit);
 	stimuChecker->setTargetCube(candCube);
 
-//for(const PdrCube& infCube: checker->getInfFrame())
-//	stimuChecker->addBlockedCube(PdrTCube(FRAME_INF, infCube));
-
 	cout << "Try " << candCube << flush;
+	const string resultStr[] = { "PASS", "FAIL", "ABORT" };
+
+	if(shareType == PDR_SHARE_INF)
+	{
+		// Be careful, we already know stimuChecker is done currently
+		// If we still need frame.back(), modify this line
+		stimuChecker->frame.back().swap(checker->frame.back());
+		stimuChecker->addBlockedCubeInf();
+		for(PdrCube& c: stimuChecker->frame.back())
+			{ assert(!c.getMarkB()); c.setMarkB(true); }
+	}
+
 	size_t r;
 	switch(stimuChecker->checkInt())
 	{
@@ -90,25 +100,69 @@ PdrChecker::PdrStimulator::solveCand(const PdrCube& candCube, unsigned mergeType
 		case PDR_RESULT_SAT   : r = 1; break;
 		default               : r = 2; break;
 	}
-	const string resultStr[] = { "PASS", "FAIL", "ABORT" };
 	cout << " -> " << resultStr[r] << endl;
 	if(checker->isVerboseON(PDR_VERBOSE_STIMU))
 		cout << "#SAT query = " << stimuChecker->totalSatQuery;
+
 	bool ret = false;
-	if(mergeType & (unsigned(1) << r))
+	if(shareType == PDR_SHARE_INF)
 	{
-		vector<PdrCube> indSet = stimuChecker->getCurIndSet(false);
-		checker->mergeInf(indSet, true);
-		if(r == 0)
+		if(mergeType & (unsigned(1) << r))
 		{
-			ret = true;
-			vector<PdrCube> tmp{candCube};
-			checker->mergeInf(tmp, true);
+			stimuChecker->collectInd();
+			// Be careful, we already know stimuChecker is done currently
+			// If we still need stimuChecker, modify this line
+			checker->frame.back().swap(stimuChecker->frame.back());
+			vector<PdrCube>& infFrame = checker->frame.back();
+			size_t numNewCls = 0;
+			for(const PdrCube& c: infFrame)
+				if(!c.getMarkB())
+				{
+					checker->checkSubsumeOthers(c, 1, checker->frame.size() - 2);
+					checker->addBlockedCubeFrame(FRAME_INF, c);
+					numNewCls += 1;
+				}
+			if(checker->isVerboseON(PDR_VERBOSE_STIMU))
+				cout << ", #new clauses = " << numNewCls << endl;
+			incInfClsNum(numNewCls);
+			if(r == 0)
+			{
+				ret = true;
+				vector<PdrCube> tmp{candCube};
+				checker->mergeInf(tmp, true);
+			}
+			else if(!oriCube.isNone())
+				for(const PdrCube& c: infFrame)
+					if(!c.getMarkB() && c.subsume(oriCube))
+						{ ret = true; break; }
+			for(PdrCube& c: infFrame)
+				if(c.getMarkB())
+					c.setMarkB(false);
 		}
-		else if(!oriCube.isNone())
-			for(const PdrCube& c: indSet)
-				if(checker->subsume(c, oriCube))
-					{ ret = true; break; }
+//		if(r == 1) addToFailed(candCube);
+		if(r != 0) addToFailed(candCube);
+	}
+	else
+	{
+		if(mergeType & (unsigned(1) << r))
+		{
+			stimuChecker->collectInd();
+			// Be careful, we already know stimuChecker is done currently
+			// If we still need stimuChecker, modify this line
+			vector<PdrCube>& indSet = stimuChecker->frame.back();
+			checker->mergeInf(indSet, true);
+			if(r == 0)
+			{
+				ret = true;
+				vector<PdrCube> tmp{candCube};
+				checker->mergeInf(tmp, true);
+			}
+			else if(!oriCube.isNone())
+				for(const PdrCube& c: indSet)
+					if(c.subsume(oriCube))
+						{ ret = true; break; }
+		}
+		if(r != 0) addToFailed(candCube);
 	}
 
 streamsize ss = cout.precision();
@@ -119,7 +173,6 @@ cout << "STIMU "
      << stimuChecker->maxObl << " " << stimuChecker->maxTree << endl;
 cout << setprecision(ss);
 
-	if(r != 0) addToFailed(candCube);
 	delete stimuChecker;
 	if(stimuStat.isON())
 		stimuStat->countOne(r),
@@ -168,7 +221,10 @@ PdrChecker::PdrStimulatorLocalInfAll::stimulateWithOneCube(const PdrTCube& tc)
 	bool result = false;
 	for(const auto&[candCube, candNum]: candidate)
 		if(candNum >= matchNum)
+//{size_t tmp = satLimit; satLimit *= matchNum;
 			result = solveCand(candCube, 0b111, blockCube) || result;
+//satLimit = tmp;
+//}
 /*
 	for(const auto&[candCube, candNum]: candidate)
 		if(candNum >= matchNum)

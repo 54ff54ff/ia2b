@@ -16,7 +16,7 @@
 using namespace std;
 
 //#define UsePatternCheckSAT
-//#define CheckOblCommonPart
+#define CheckOblCommonPart
 
 namespace _54ff
 {
@@ -116,6 +116,12 @@ enum PdrStimuType
 	PDR_STIMU_LOCAL_MIX,
 	PDR_STIMU_HALF,
 	PDR_STIMU_NONE
+};
+
+enum PdrShareType
+{
+	PDR_SHARE_NONE,
+	PDR_SHARE_INF
 };
 
 enum PdrMainType
@@ -263,6 +269,7 @@ public:
 	void setLit(unsigned i, AigGateLit lit) { *(uint32Ptr + i) = lit; }
 	void calAbstract(unsigned i) { *(uint64Ptr - 2) |= (size_t(1) << (getGateID(getLit(i)) & 63)); }
 	void initAbstract() { *(uint64Ptr - 2) = 0; }
+	void initMark() { setMarkA(false); setMarkB(false); }
 
 	unsigned getSize()const  { return *(uint32Ptr - 1); }
 	// We use gate ID instead of latch index here
@@ -275,6 +282,7 @@ public:
 	void incCount() { *(uint16Ptr - 3) += 1; }
 	void decCount() { *(uint16Ptr - 3) -= 1; }
 	bool toDelete()const { return isCount(0); }
+	// TODO, when the trace is too long, stack overflow occurs
 	void clear() { getPrevCube().~PdrCube(); operator delete(getOriPtr()); }
 	void decAndCheck() { decCount(); if(toDelete()) clear(); }
 	void clean() { if(!isNone()) decAndCheck(); }
@@ -285,7 +293,8 @@ public:
 	bool getMarkB()const { return *(boolPtr - 7); }
 	void setMarkB(bool value) { *(boolPtr - 7) = value; }
 
-	void setPrevCube(const PdrCube* c) { if(c == 0) new (cubePtr - 3) PdrCube();
+	void setPrevCube(const PdrCube* c) { assert(c == 0 || !c->isNone());
+	                                     if(c == 0) new (cubePtr - 3) PdrCube();
 	                                     else       new (cubePtr - 3) PdrCube(*c); }
 	PdrCube& getPrevCube()const { return *(cubePtr - 3); }
 
@@ -336,8 +345,8 @@ class PdrChecker : public SafetyBNChecker
 public:
 	PdrChecker(AigNtk*, size_t, bool, size_t, size_t, size_t, size_t,
 	           PdrSimType, PdrOrdType, PdrOblType, PdrDeqType, PdrPrpType, PdrGenType,
-	           bool, bool, bool, bool, bool, bool, size_t, size_t, bool,
-	           PdrStimuType, size_t, size_t, size_t);
+	           bool, bool, bool, bool, bool, bool, size_t, size_t, size_t, bool,
+	           PdrStimuType, PdrShareType, size_t, size_t, size_t);
 	~PdrChecker();
 
 // For stimulator (Start)
@@ -348,7 +357,7 @@ protected:
 			class PdrStimulatorLocalMix;
 		class PdrStimulatorHalf;
 
-	PdrStimulator* getStimulator(PdrStimuType, bool, size_t, size_t, size_t);
+	PdrStimulator* getStimulator(PdrStimuType, PdrShareType, bool, size_t, size_t, size_t);
 	void mergeInf(vector<PdrCube>&, bool);
 	void disablePrintFrame() { assert(isVerboseON(PDR_VERBOSE_FRAME));
 	                           verbosity &= ~getPdrVbsMask(PDR_VERBOSE_FRAME); }
@@ -435,6 +444,7 @@ protected:
 	bool checkIsSubsumed(const PdrCube&, size_t, size_t)const;
 	void checkSubsumeOthers(const PdrCube&, size_t, size_t);
 	void printTrace()const;
+	void collectInd();
 
 protected:
 	PdrMainType  mainType;
@@ -493,6 +503,8 @@ protected:
 	mutable size_t  totalSatQuery;
 	const size_t    satQueryLimit;
 	mutable size_t  oblTreeSize;
+	mutable size_t  numObl;
+	const size_t    numOblLimit;
 mutable size_t numConf, numDeci, maxObl, maxTree;
 
 	size_t  verbosity;
@@ -529,7 +541,6 @@ protected:
 
 #ifdef CheckOblCommonPart
 protected:
-	mutable size_t             numObl;
 	mutable size_t             idxOfLastChange;
 	mutable vector<AigGateLit> commonPart;
 
@@ -540,8 +551,8 @@ protected:
 class PdrChecker::PdrStimulator
 {
 public:
-	PdrStimulator(PdrChecker* c, size_t satL, bool statON)
-	: checker(c), satLimit(satL), stimuStat(statON) {}
+	PdrStimulator(PdrChecker* c, PdrShareType shareT, size_t satL, bool statON)
+	: checker(c), shareType(shareT), satLimit(satL), stimuStat(statON) {}
 	virtual ~PdrStimulator();
 
 	virtual bool stimulateWithOneCube (const PdrTCube&) { return false; }
@@ -557,6 +568,7 @@ protected:
 
 protected:
 	PdrChecker*            checker;
+	PdrShareType           shareType;
 	size_t                 satLimit;
 	vector<PdrCube>        failCubes;
 	StatPtr<PdrStimuStat>  stimuStat;
@@ -565,8 +577,8 @@ protected:
 class PdrChecker::PdrStimulatorLocal : public PdrStimulator
 {
 public:
-	PdrStimulatorLocal(PdrChecker* c, bool statON, size_t bn, size_t mn, size_t sl)
-	: PdrStimulator(c, sl, statON), backtrackNum(bn), matchNum(mn) { assert(bn >= mn && mn > 0); }
+	PdrStimulatorLocal(PdrChecker* c, PdrShareType shareT, bool statON, size_t bn, size_t mn, size_t sl)
+	: PdrStimulator(c, shareT, sl, statON), backtrackNum(bn), matchNum(mn) { assert(bn >= mn && mn > 0); }
 
 protected:
 	size_t  backtrackNum;
@@ -576,8 +588,8 @@ protected:
 class PdrChecker::PdrStimulatorLocalInfAll : public PdrStimulatorLocal
 {
 public:
-	PdrStimulatorLocalInfAll(PdrChecker* c, bool statON, size_t bn, size_t mn, size_t sl, bool onlyI)
-	: PdrStimulatorLocal(c, statON, bn, mn, sl), onlyInf(onlyI) {}
+	PdrStimulatorLocalInfAll(PdrChecker* c, PdrShareType shareT, bool statON, size_t bn, size_t mn, size_t sl, bool onlyI)
+	: PdrStimulatorLocal(c, shareT, statON, bn, mn, sl), onlyInf(onlyI) {}
 
 	bool stimulateWithOneCube(const PdrTCube&);
 
@@ -588,8 +600,8 @@ protected:
 class PdrChecker::PdrStimulatorLocalMix : public PdrStimulatorLocal
 {
 public:
-	PdrStimulatorLocalMix(PdrChecker* c, bool statON, size_t bn, size_t mn, size_t sl)
-	: PdrStimulatorLocal(c, statON, bn, mn, sl), curIdx(0) {}
+	PdrStimulatorLocalMix(PdrChecker* c, PdrShareType shareT, bool statON, size_t bn, size_t mn, size_t sl)
+	: PdrStimulatorLocal(c, shareT, statON, bn, mn, sl), curIdx(0) {}
 
 	bool stimulateWithOneCube(const PdrTCube&);
 
@@ -601,8 +613,8 @@ protected:
 class PdrChecker::PdrStimulatorHalf : public PdrStimulator
 {
 public:
-	PdrStimulatorHalf(PdrChecker* c, bool statON, size_t on, size_t mn, size_t sl)
-	: PdrStimulator(c, sl, statON), observeNum(on), matchNum(mn) { assert(on > 0 && mn >= 2); }
+	PdrStimulatorHalf(PdrChecker* c, PdrShareType shareT, bool statON, size_t on, size_t mn, size_t sl)
+	: PdrStimulator(c, shareT, sl, statON), observeNum(on), matchNum(mn) { assert(on > 0 && mn >= 2); }
 
 	void stimulateAtEndOfFrame();
 

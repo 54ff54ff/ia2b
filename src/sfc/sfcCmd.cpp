@@ -27,7 +27,7 @@ CmdClass(ItpCheck, CMD_TYPE_VERIFICATION, 5, "-TRace",   3,
                                              "-All",     2,
                                              "-Last",    2,
                                              "-TImeout", 3);
-CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 29, "-TRace",     3,
+CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 32, "-TRace",     3,
                                               "-Max",       2,
                                               "-EVent",     3,
                                               "-Backward",  2,
@@ -55,7 +55,10 @@ CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 29, "-TRace",     3,
                                               "-LOCALInf",  7,
                                               "-LOCALAll",  7,
                                               "-LOCALMix",  7,
-                                              "-HALF",      5);
+                                              "-HALF",      5,
+                                              "-SATLimit",  5,
+                                              "-SHare",     3,
+                                              "-OBLLimit",  5);
 CmdClass(PbcCheck, CMD_TYPE_VERIFICATION, 9, "-TRace",     3,
                                              "-Max",       2,
                                              "-Stat",      2,
@@ -337,6 +340,8 @@ ItpCheckCmd::getHelpStr()const
 	CHEck SAfety PDr <(unsigned outputIdx)> [-TRace]
 	                 [-TImeout (unsigned timeout)]
 	                 [-Max (unsigned maxFrame)]
+	                 [-SATLimit (unsigned satLimit)]
+	                 [-OBLLimit (unsigned oblLimit)]
 	                 [<-RECycle (unsigned recycleNum)> [-CAlled]]
 	                 [-EVent | -Backward | -INTernal]
 	                 [-NEEDCone] [-NEEDFrame]
@@ -346,7 +351,7 @@ ItpCheckCmd::getHelpStr()const
 	                 [-EAger] [-INFinite] [-ASsert]
 	                 [-STat ("atsgprcx")] [-Verbose ("aogpbtcimfx")]
 	                 [<<-LOCALInf | -LOCALAll | -LOCALMix> ((unsigned) backtrackNum matchNum) |
-	                  -HALF ((unsigned) observeNum matchNum)> (unsigned satLimit)]
+	                  -HALF ((unsigned) observeNum matchNum)> (unsigned satLimit) [-SHare]]
                      [-CHeck]
 --------------------------------------------------------------------------
 	0:  -TRace,     3
@@ -378,6 +383,9 @@ ItpCheckCmd::getHelpStr()const
 	26: -LOCALAll,  7
 	27: -LOCALMix,  7
 	28: -HALF,      5
+	29: -SATLimit,  5
+	30: -SHare,     3
+	31: -OBLLimit,  5
 ========================================================================*/
 
 CmdExecStatus
@@ -418,8 +426,12 @@ PdrCheckCmd::exec(char* options)const
 	bool   checkII   = false;
 
 	size_t satQL = 0;
+	bool customSatLimit = false;
+	size_t oblL = 0;
+	bool customOblLimit = false;
 
 	PdrStimuType pstt = PDR_STIMU_NONE;
+	PdrShareType psht = PDR_SHARE_NONE;
 	size_t stimuNum1, stimuNum2, stimuNum3;
 
 	for(size_t i = 1, n = tokens.size(); i < n; ++i)
@@ -730,13 +742,41 @@ PdrCheckCmd::exec(char* options)const
 				{ cerr << "[Error] matchNum cannot be less than 2!" << endl; return CMD_EXEC_ERROR_EXT; }
 			pstt = PDR_STIMU_HALF;
 		}
+		else if(optMatch<29>(tokens[i]))
+		{
+			if(customSatLimit)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], satQL))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			customSatLimit = true;
+		}
+		else if(optMatch<30>(tokens[i]))
+		{
+			if(pstt == PDR_STIMU_NONE)
+				return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
+			if(psht != PDR_SHARE_NONE)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			psht = PDR_SHARE_INF;
+		}
+		else if(optMatch<31>(tokens[i]))
+		{
+			if(customOblLimit)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], oblL))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			customOblLimit = true;
+		}
 		else return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
 	if(!checkNtk()) return CMD_EXEC_ERROR_INT;
 	SafetyChecker* checker = getChecker<PdrChecker>(aigNtk, outputIdx, trace, timeout, maxFrame, recycleNum, stats,
 	                                                psit, port, pobt, pdt, ppt, pgt,
 	                                                rInf, cInNeedC, cSelf, assertF, recycleBQ, cInNeedF,
-	                                                satQL, verbosity, checkII,
-	                                                pstt, stimuNum1, stimuNum2, stimuNum3);
+	                                                satQL, oblL, verbosity, checkII,
+	                                                pstt, psht, stimuNum1, stimuNum2, stimuNum3);
 	if(checker == 0) return CMD_EXEC_ERROR_INT;
 	checker->Check(); delete checker; return CMD_EXEC_DONE;
 }
@@ -747,6 +787,8 @@ PdrCheckCmd::getUsageStr()const
 	return "<(unsigned outputIdx)> [-Trace]\n"
 	       "[-TImeout (unsigned timeout)]\n"
            "[-Max (unsigned maxFrame)]\n"
+	       "[-SATLimit (unsigned satLimit)]\n"
+	       "[-OBLLimit (unsigned oblLimit)]\n"
 	       "[<-RECycle (unsigned recycleNum)> [-CAlled]]\n"
            "[-EVent | -Backward | -INTernal]\n"
 	       "[-NEEDCone] [-NEEDFrame]\n"
@@ -756,7 +798,7 @@ PdrCheckCmd::getUsageStr()const
 	       "[-EAger] [-INFinite] [-ASsert]\n"
 	       "[-STat (\"atsgprcx\")] [-Verbose (\"aogpbtcimfx\")]\n"
 	       "[<<-LOCALInf | -LOCALAll | -LOCALMix> ((unsigned) backtrackNum matchNum) |\n"
-	       " -HALF ((unsigned) observeNum matchNum)> (unsigned satLimit)]\n"
+	       " -HALF ((unsigned) observeNum matchNum)> (unsigned satLimit) [-SHare]]\n"
 	       "[-CHeck]\n";
 }
 

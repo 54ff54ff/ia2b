@@ -575,6 +575,9 @@ AigSimulator::simNot(ThreeValue v)
 
 	constexpr ThreeValue magicNum = 33;
 	return (magicNum >> (v << 1)) & 3;
+	// Equivalent to
+	constexpr ThreeValue LUT[3] = { ThreeValue_True, ThreeValue_False, ThreeValue_DC };
+	return LUT[v];
 }
 
 ThreeValue
@@ -599,6 +602,11 @@ AigSimulator::simAnd(ThreeValue v1, ThreeValue v2)
 
 	constexpr ThreeValue magicNum = 2630656;
 	return (magicNum >> (((v1 << 2) | v2) << 1)) & 3;
+	// Equivalent to
+	constexpr ThreeValue LUT[3][3] = {{ ThreeValue_False, ThreeValue_False, ThreeValue_False },
+	                                  { ThreeValue_False, ThreeValue_True,  ThreeValue_DC    },
+	                                  { ThreeValue_False, ThreeValue_DC,    ThreeValue_DC    }};
+	return LUT[v1][v2];
 }
 
 char
@@ -618,6 +626,9 @@ AigSimulator::getSymbol(ThreeValue v)
 
 	constexpr unsigned magicNum = 1314402608;
 	return char((magicNum >> (v << 3)) & 0xFF);
+	// Equivalent to
+	constexpr char LUT[4] = { '0', '1', 'X', 'N' };
+	return LUT[v];
 }
 
 }
