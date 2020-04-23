@@ -359,6 +359,7 @@ PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t
                        PdrStimuType stimuT, PdrShareType shareT, size_t stimuNum1, size_t stimuNum2, size_t stimuNum3)
 : SafetyBNChecker    (ntkToCheck, outputIdx, _trace, timeout)
 , mainType           (PDR_MAIN_NORMAL)
+, initType           (PDR_INIT_DEFAULT)
 , curFrame           (0)
 , maxFrame           (maxF)
 , initState          ()
@@ -519,6 +520,7 @@ PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t
 		{
 			case PDR_SHARE_NONE : sfcMsg << "Reuse nothing, start from the beginning"; break;
 			case PDR_SHARE_INF  : sfcMsg << "Reuse the infinite frame";                break;
+			case PDR_SHARE_ALL  : sfcMsg << "Reuse all the frames";                    break;
 		}
 		sfcMsg << endl;
 	}
@@ -576,9 +578,9 @@ PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t
 	/* Prepare for the initial state and infinite frame */
 	frame.emplace_back();
 	newFrame();
-	addInitState();
 	if(convertInNeedFrame)
 		frameConverted = 1;
+	else addInitState();
 
 	#ifdef UsePatternCheckSAT
 	simValue.init(ntk->getMaxGateNum());
@@ -593,6 +595,9 @@ PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t
 
 	#ifdef CheckOblCommonPart
 	idxOfLastChange = 0;
+	isDC.init(ntk->getMaxGateNum());
+	for(size_t i = 0, L = ntk->getLatchNum(); i < L; ++i)
+		isDC[ntk->getLatchID(i)] = true;
 	#endif
 }
 
@@ -633,6 +638,11 @@ PdrChecker::~PdrChecker()
 		for(AigGateLit lit: commonPart)
 			sfcMsg << " " << (isInv(lit) ? "!" : "") << getGateID(lit);
 	sfcMsg << endl;
+//	sfcMsg << "DC:";
+//	for(size_t i = 0, L = ntk->getLatchNum(); i < L; ++i)
+//		if(isDC[ntk->getLatchID(i)])
+//			sfcMsg << " " << ntk->getLatchID(i);
+//	sfcMsg << endl;
 	#endif
 }
 
@@ -653,39 +663,39 @@ PdrChecker::getStimulator(PdrStimuType stimuT, PdrShareType shareT, bool statON,
 }
 
 void
-PdrChecker::mergeInf(vector<PdrCube>& indSet, bool pushAtBack)
+PdrChecker::mergeInf(const vector<PdrCube>& indSet, bool pushAtBack)
 {
+	vector<PdrCube>  tmp = indSet;
 	vector<PdrCube>& inf = frame.back();
 	const size_t infIdx = frame.size() - 1;
 	size_t s = 0;
-	for(size_t i = 0, n = indSet.size(); i < n; ++i)
-		if(!checkIsSubsumed(indSet[i], infIdx, infIdx))
+	for(size_t i = 0, n = tmp.size(); i < n; ++i)
+		if(!checkIsSubsumed(tmp[i], infIdx, infIdx))
 		{
-			checkSubsumeOthers(indSet[i], 1, infIdx);
+			checkSubsumeOthers(tmp[i], 1, infIdx);
 			if(s < i)
-				indSet[s++] = move(indSet[i]);
+				tmp[s++] = move(tmp[i]);
 			else { assert(s == i); s += 1; }
 		}
 
 	stimulator->incInfClsNum(s);
 	if(isVerboseON(PDR_VERBOSE_STIMU))
-		cout << ", #original clause = " << indSet.size() << ", #added clause = " << s << endl;
-	indSet.resize(s);
+		cout << ", #original clause = " << tmp.size() << ", #added clause = " << s << endl;
+	tmp.resize(s);
 
-	for(const PdrCube& c: indSet)
+	for(const PdrCube& c: tmp)
 		addBlockedCubeFrame(FRAME_INF, c);
 	if(cubeStat.isON())
-		for(const PdrCube& c: indSet)
+		for(const PdrCube& c: tmp)
 			cubeStat->incInfCubeNum(),
 			cubeStat->incInfLitNum(c.getSize()),
 			cubeStat->checkMaxCLen(c.getSize());
 
 	if(pushAtBack)
-		for(const PdrCube& c: indSet)
-			inf.push_back(c);
+		for(PdrCube& c: tmp)
+			inf.push_back(move(c));
 	else
 	{
-		vector<PdrCube> tmp(indSet);
 		for(PdrCube& c: inf)
 			tmp.push_back(move(c));
 		inf.swap(tmp);
@@ -698,7 +708,7 @@ PdrChecker::cloneChecker(size_t satLimit)const
 	constexpr size_t fakeOutputIdx = 0;
 	constexpr bool   noTrace       = false;
 	constexpr size_t noTimeout     = 0;
-	constexpr size_t highMaxFrame  = 50000;
+	constexpr size_t highMaxFrame  = MAX_SIZE_T;
 	constexpr size_t noStat        = 0;
 	constexpr size_t noOblLimit    = 0;
 	constexpr size_t vbsOff        = 0;
@@ -935,15 +945,39 @@ PdrChecker::generalize(const PdrTCube& s)
 	if(isOrdDynamic())
 		sortGenCubeByAct();
 	size_t newF = s.getFrame();
+	for(size_t i = 0, n = genCube.size(); i < n; ++i)
+		assert(solver->isConverted(getGateID(genCube[i]), 1));
 
+	switch(initType)
+	{
+		case PDR_INIT_DEFAULT : generalizeDefault(newF); break;
+		case PDR_INIT_CLAUSE  : generalizeClause (newF); break;
+		case PDR_INIT_CUBE    : generalizeCube   (newF); break;
+	}
+	if(unsatGenStat.isON())
+		unsatGenStat->incRemoveCount(size_t(c.getSize()) - genCube.size());
+
+	PdrTCube newTCube(newF, PdrCube(genCube, isOrdDynamic()));
+	if(isVerboseON(PDR_VERBOSE_GEN))
+	{
+		cout << RepeatChar('-', 36) << endl
+		     << "UNSAT generalization: frame = ";
+		if(newTCube.getFrame() == FRAME_INF) cout << "Inf"; else cout << newTCube.getFrame();
+		cout << ", " << newTCube.getCube() << endl
+		     << RepeatChar('-', 36) << endl;
+	}
+	return newTCube;
+}
+
+void
+PdrChecker::generalizeDefault(size_t& newF)
+{
 	/* Calculate the number of positive literal */
 	size_t numPos = 0;
 	for(size_t i = 0, n = genCube.size(); i < n; ++i)
 		if(!isInv(genCube[i]))
 			numPos += 1;
 	assert(numPos != 0);
-	for(size_t i = 0, n = genCube.size(); i < n; ++i)
-		assert(solver->isConverted(getGateID(genCube[i]), 1));
 
 	/* Remove a literal each time */
 	if(unsatGenStat.isON())
@@ -1001,7 +1035,7 @@ PdrChecker::generalize(const PdrTCube& s)
 	if(unsatGenStat.isON())
 		unsatGenStat->startTime();
 
-	while(newF < curFrame)
+	while(newF < actVar.size() - 1)
 	{
 		#ifdef UsePatternCheckSAT
 		checkPatForSat(newF, MAX_SIZE_T);
@@ -1032,21 +1066,92 @@ PdrChecker::generalize(const PdrTCube& s)
 	}
 
 	if(unsatGenStat.isON())
-		unsatGenStat->finishPushTime(),
-		unsatGenStat->incRemoveCount(size_t(s.getCube().getSize()) - genCube.size());
-
-	if(isVerboseON(PDR_VERBOSE_GEN))
-	{
-		PdrTCube newTCube(newF, PdrCube(genCube, isOrdDynamic()));
-		cout << RepeatChar('-', 36) << endl
-		     << "UNSAT generalization: frame = ";
-		if(newTCube.getFrame() == FRAME_INF) cout << "Inf"; else cout << newTCube.getFrame();
-		cout << ", " << newTCube.getCube() << endl
-		     << RepeatChar('-', 36) << endl;
-		return newTCube;
-	}
-	else return PdrTCube(newF, PdrCube(genCube, isOrdDynamic()));
+		unsatGenStat->finishPushTime();
 }
+
+void
+PdrChecker::generalizeClause(size_t& newF)
+{
+	/* Remove a literal each time */
+	if(unsatGenStat.isON())
+		unsatGenStat->doOneTime(),
+		unsatGenStat->startTime();
+
+	if(genType != PDR_GEN_IGNORE)
+	{
+		for(size_t i = 0; i < genCube.size();)
+			if(getInitValue(getGateID(genCube[i])) == ThreeValue_DC)
+			{
+				solver->clearAssump();
+				const Var act = addCurNotState(genCube, i);
+				activateFrame(newF-1); //it's fine even if newF is FRAME_INF
+				addNextState(genCube, i);
+				if(genType == PDR_GEN_APPROX ? !satSolveLimited() : !satSolve())
+				{
+					newF = findLowestActPlus1(newF-1);
+					size_t s1 = 0;
+					for(size_t j = 0; j < i; ++j)
+						if(solver->inConflict(getGateID(genCube[j]), 1) ||
+						   getInitValue(getGateID(genCube[j])) != ThreeValue_DC)
+							genCube[s1++] = genCube[j];
+					size_t s2 = s1;
+					for(size_t j = i + 1, n = genCube.size(); j < n; ++j)
+						if(solver->inConflict(getGateID(genCube[j]), 1) ||
+						   getInitValue(getGateID(genCube[j])) != ThreeValue_DC)
+							genCube[s2++] = genCube[j];
+					genCube.resize(s2);
+					i = s1;
+					assert(!isInitial(genCube));
+				}
+				else i += 1;
+				disableActVar(act);
+				CheckBreakPdr(true);
+			}
+			else
+			{
+				assert(diffPolar(genCube[i]));
+				i += 1;
+			}
+	}
+
+	if(unsatGenStat.isON())
+		unsatGenStat->finishRemoveTime();
+
+	/* Try to propagate to further timeframe */
+	if(unsatGenStat.isON())
+		unsatGenStat->startTime();
+
+	while(newF < actVar.size() - 1)
+	{
+		solver->clearAssump();
+		const Var act = addCurNotState(genCube);
+		activateFrame(newF);
+		addNextState(genCube);
+		bool Break = true;
+		if(!satSolve())
+		{
+			Break = false;
+			newF = findLowestActPlus1(newF);
+			size_t s = 0;
+			for(size_t i = 0, n = genCube.size(); i < n; ++i)
+				if(solver->inConflict(getGateID(genCube[i]), 1) ||
+				   getInitValue(getGateID(genCube[i])) != ThreeValue_DC)
+					genCube[s++] = genCube[i];
+			genCube.resize(s);
+			assert(!isInitial(genCube));
+		}
+		disableActVar(act);
+		CheckBreakPdr(true);
+		if(Break) break;
+	}
+
+	if(unsatGenStat.isON())
+		unsatGenStat->finishPushTime();
+}
+
+void
+PdrChecker::generalizeCube(size_t&)
+{}
 
 bool
 PdrChecker::propBlockedCubes()
@@ -1161,10 +1266,36 @@ PdrChecker::isBlockedSAT(const PdrTCube& badTCube)const
 bool
 PdrChecker::isInitial(const PdrCube& cube)const
 {
-	for(unsigned i = 0; i < cube.getSize(); ++i)
-		if(!isInv(cube.getLit(i)))
+	switch(initType)
+	{
+		case PDR_INIT_DEFAULT:
+			for(unsigned i = 0; i < cube.getSize(); ++i)
+				if(!isInv(cube.getLit(i)))
+					return false;
+			return true;
+
+		case PDR_INIT_CLAUSE:
+		{
+			size_t numDiffLit = 0;
+			for(unsigned i = 0; i < cube.getSize(); ++i)
+				if(ThreeValue v = getInitValue(getGateID(cube.getLit(i))); v != ThreeValue_DC)
+				{
+					if(v ^ isInvNum(cube.getLit(i)))
+						return true;
+					numDiffLit += 1;
+				}
+			assert(numDiffLit <= numLitInit);
+			return numDiffLit < numLitInit;
+		}
+
+		case PDR_INIT_CUBE:
+			// TODO
+			return true;
+
+		default:
+			assert(false);
 			return false;
-	return true;
+	}
 }
 
 PdrTCube
@@ -1200,9 +1331,6 @@ PdrChecker::newFrame()
 void
 PdrChecker::addBlockedCube(const PdrTCube& blockTCube, size_t initF)
 {
-	if(stimulator != 0 && stimulator->stimulateWithOneCube(blockTCube))
-		return;
-
 	size_t k = frame.size() - 1;
 	const size_t blockFrame = blockTCube.getFrame();
 	assert(blockFrame != FRAME_NULL);
@@ -1260,6 +1388,13 @@ PdrChecker::addBlockedCube(const PdrTCube& blockTCube, size_t initF)
 			cubeStat->incInfLitNum(blockCube.getSize());
 			cubeStat->checkMaxCLen(blockCube.getSize());
 		}
+
+	#ifdef CheckOblCommonPart
+	checkIsDC(blockCube);
+	#endif
+
+	if(stimulator != 0)
+		stimulator->stimulateWithOneCube(blockTCube);
 }
 
 void
@@ -1269,10 +1404,10 @@ PdrChecker::addBlockedCubeFrame(size_t blockFrame, const PdrCube& blockCube)cons
 	assert(blockFrame < actVar.size() || blockFrame == FRAME_INF);
 
 	if(blockFrame != FRAME_INF)
-		litList.push_back(Lit(actVar[blockFrame], true));
+		litList.emplace_back(actVar[blockFrame], true);
 	for(unsigned i = 0; i < blockCube.getSize(); ++i)
-		litList.push_back(Lit(solver->getVarInt(getGateID(blockCube.getLit(i)), 0),
-		                      !isInv(blockCube.getLit(i))));
+		litList.emplace_back(solver->getVarInt(getGateID(blockCube.getLit(i)), 0),
+		                     !isInv(blockCube.getLit(i)));
 	solver->addClause(litList);
 	litList.clear();
 	const_cast<PdrCube&>(blockCube).setMarkA(false);
@@ -1445,10 +1580,10 @@ Var
 PdrChecker::addCurNotState(const PdrCube& c)const
 {
 	const Var act = solver->newVar();
-	litList.push_back(Lit(act, true));
+	litList.emplace_back(act, true);
 	for(unsigned i = 0; i < c.getSize(); ++i)
-		litList.push_back(Lit(solver->getVarInt(getGateID(c.getLit(i)), 0),
-		                      !isInv(c.getLit(i))));
+		litList.emplace_back(solver->getVarInt(getGateID(c.getLit(i)), 0),
+		                     !isInv(c.getLit(i)));
 	solver->addClause(litList);
 	litList.clear();
 	solver->addAssump(act, false);
@@ -1481,21 +1616,36 @@ PdrChecker::unsatGen(const PdrCube& c)const
 {
 	assert(!isInitial(c));
 	genCube.clear();
-	for(unsigned i = 0; i < c.getSize(); ++i)
-		if(solver->inConflict(getGateID(c.getLit(i)), 1))
-			genCube.push_back(c.getLit(i));
-	if(isInitial(genCube))
+	switch(initType)
 	{
-		for(unsigned i = c.getSize() - 1; i != unsigned(-1); --i)
-			if(!isInv(c.getLit(i)))
+		case PDR_INIT_DEFAULT:
+			for(unsigned i = 0; i < c.getSize(); ++i)
+				if(solver->inConflict(getGateID(c.getLit(i)), 1))
+					genCube.push_back(c.getLit(i));
+			if(isInitial(genCube))
 			{
-				size_t j = genCube.size();
-				genCube.push_back(c.getLit(i));
-				for(; j > 0 && c.getLit(i) < genCube[j-1]; --j)
-					genCube[j] = genCube[j-1];
-				genCube[j] = c.getLit(i);
-				break;
+				for(unsigned i = c.getSize() - 1; i != unsigned(-1); --i)
+					if(!isInv(c.getLit(i)))
+					{
+						size_t j = genCube.size();
+						genCube.push_back(c.getLit(i));
+						for(; j > 0 && c.getLit(i) < genCube[j-1]; --j)
+							genCube[j] = genCube[j-1];
+						genCube[j] = c.getLit(i);
+						break;
+					}
 			}
+			break;
+
+		case PDR_INIT_CLAUSE:
+			for(unsigned i = 0; i < c.getSize(); ++i)
+				if(solver->inConflict(getGateID(c.getLit(i)), 1) || diffPolar(c.getLit(i)))
+					genCube.push_back(c.getLit(i));
+			break;
+
+		case PDR_INIT_CUBE:
+			// TODO
+			break;
 	}
 	assert(!isInitial(genCube));
 	return PdrCube(genCube);
@@ -1514,21 +1664,47 @@ PdrChecker::findLowestActPlus1(size_t f)const
 bool
 PdrChecker::isInitial(const vector<AigGateLit>& cubeVec, size_t ignoreIdx)const
 {
-	for(size_t i = 0, n = cubeVec.size(); i < n; ++i)
-		if(!isInv(cubeVec[i]) && i != ignoreIdx)
+	switch(initType)
+	{
+		case PDR_INIT_DEFAULT:
+			for(size_t i = 0, n = cubeVec.size(); i < n; ++i)
+				if(!isInv(cubeVec[i]) && i != ignoreIdx)
+					return false;
+			return true;
+
+		case PDR_INIT_CLAUSE:
+		{
+			size_t numDiffLit = 0;
+			for(size_t i = 0, n = cubeVec.size(); i < n; ++i)
+				if(ThreeValue v = getInitValue(getGateID(cubeVec[i])); v != ThreeValue_DC)
+				{
+					if((v ^ isInvNum(cubeVec[i])) && i != ignoreIdx)
+						return true;
+					numDiffLit += 1;
+				}
+			assert(numDiffLit <= numLitInit);
+			return numDiffLit < numLitInit;
+		}
+
+		case PDR_INIT_CUBE:
+			// TODO
+			return true;
+
+		default:
+			assert(false);
 			return false;
-	return true;
+	}
 }
 
 Var
 PdrChecker::addCurNotState(const vector<AigGateLit>& cubeVec, size_t ignoreIdx)const
 {
 	const Var act = solver->newVar();
-	litList.push_back(Lit(act, true));
+	litList.emplace_back(act, true);
 	for(size_t i = 0, n = cubeVec.size(); i < n; ++i)
 		if(i != ignoreIdx)
-			litList.push_back(Lit(solver->getVarInt(getGateID(cubeVec[i]), 0),
-			                      !isInv(cubeVec[i])));
+			litList.emplace_back(solver->getVarInt(getGateID(cubeVec[i]), 0),
+			                     !isInv(cubeVec[i]));
 	solver->addClause(litList);
 	litList.clear();
 	solver->addAssump(act, false);
@@ -1740,9 +1916,29 @@ void
 PdrChecker::addInitState()const
 {
 	Lit actInit(actVar[0], true);
-	for(size_t i = 0, L = ntk->getLatchNum(); i < L; ++i)
-		solver->addClause(actInit,
-		                  Lit(solver->getVarInt(ntk->getLatchID(i), 0), true));
+	switch(initType)
+	{
+		case PDR_INIT_DEFAULT:
+			for(size_t i = 0, L = ntk->getLatchNum(); i < L; ++i)
+				solver->addClause(actInit,
+				                  Lit(solver->getVarInt(ntk->getLatchID(i), 0), true));
+			break;
+
+		case PDR_INIT_CLAUSE:
+			litList.push_back(actInit);
+			for(size_t i = 0, L = ntk->getLatchNum(); i < L; ++i)
+				if(ThreeValue v = getInitValue(ntk->getLatchID(i));
+				   v != ThreeValue_DC)
+					litList.emplace_back(solver->getVarInt(ntk->getLatchID(i), 0),
+					                     v == ThreeValue_False);
+			solver->addClause(litList);
+			litList.clear();
+			break;
+
+		case PDR_INIT_CUBE:
+			// TODO
+			break;
+	}
 }
 
 void
@@ -1837,22 +2033,65 @@ PdrChecker::checkAndPrintIndInv()
 		     << "Check the inductive invariant:" << endl;
 		SolverPtr<CirSolver> checkSolver(ntk);
 
-		cout << "1. Check if the initial state is in the set : " << flush;
-		checkSolver->clearAssump();
+		Progresser initP("1. Check if the initial state is in the set : ", indInv.size());
 		for(size_t i = 0, L = ntk->getLatchNum(); i < L; ++i)
-			checkSolver->convertToCNF(ntk->getLatchID(i), 0),
-			checkSolver->addAssump(ntk->getLatchID(i), 0, true);
+			checkSolver->convertToCNF(ntk->getLatchID(i), 0);
+		Lit initAct(checkSolver->newVar(), true);
+		switch(initType)
+		{
+			case PDR_INIT_DEFAULT:
+				for(size_t i = 0, L = ntk->getLatchNum(); i < L; ++i)
+					checkSolver->addClause(initAct,
+					                       Lit(checkSolver->getVarInt(ntk->getLatchID(i), 0), true));
+				break;
+
+			case PDR_INIT_CLAUSE:
+				litList.push_back(initAct);
+				for(size_t i = 0, L = ntk->getLatchNum(); i < L; ++i)
+					if(ThreeValue v = getInitValue(ntk->getLatchID(i));
+					   v != ThreeValue_DC)
+						litList.emplace_back(checkSolver->getVarInt(ntk->getLatchID(i), 0),
+						                     v == ThreeValue_False);
+				checkSolver->addClause(litList);
+				litList.clear();
+				break;
+
+			case PDR_INIT_CUBE:
+				// TODO
+				break;
+		}
+		initP.printLine();
+		vector<PdrCube> notInit;
+		for(const PdrCube& c: indInv)
+		{
+			checkSolver->clearAssump();
+			checkSolver->addAssump(~initAct);
+			for(AigGateLit lit: c)
+				checkSolver->addAssump(getGateID(lit), 0, isInv(lit));
+			if(checkSolver->solve())
+				notInit.push_back(c);
+			initP.count();
+		}
+		initP.cleanCurLine();
+		cout << "\r1. Check if the initial state is in the set : "
+		     << (notInit.empty() ? "PASS" : "FAIL") << endl;
+		if(!notInit.empty())
+		{
+			cout << "Failed clause:" << endl;
+			for(const PdrCube& c: notInit)
+				cout << c << endl;
+		}
+		checkSolver->addClause(initAct);
+
+		cout << "2. Check if the property holds for the set  : " << flush;
 		for(const PdrCube& c: indInv)
 		{
 			for(unsigned i = 0; i < c.getSize(); ++i)
-				litList.push_back(Lit(checkSolver->getVarInt(getGateID(c.getLit(i)), 0),
-				                      !isInv(c.getLit(i))));
+				litList.emplace_back(checkSolver->getVarInt(getGateID(c.getLit(i)), 0),
+				                     !isInv(c.getLit(i)));
 			checkSolver->addClause(litList);
 			litList.clear();
 		}
-		cout << (checkSolver->solve() ? "PASS" : "FAIL") << endl;
-
-		cout << "2. Check if the property holds for the set  : " << flush;
 		checkSolver->clearAssump();
 		if(targetCube.isNone())
 			checkSolver->convertToCNF(property, 0),
@@ -2040,8 +2279,22 @@ PdrChecker::printTrace()const
 		Array<bool> curState(L);
 		for(size_t i = 0; i < L; ++i)
 			traceSolver->convertToCNF(ntk->getLatchID(i), 0),
-			traceSolver->convertToCNF(ntk->getLatchID(i), 1),
-			curState[i] = true;
+			traceSolver->convertToCNF(ntk->getLatchID(i), 1);
+		switch(initType)
+		{
+			case PDR_INIT_DEFAULT:
+				for(size_t i = 0; i < L; ++i)
+					curState[i] = true;
+				break;
+
+			case PDR_INIT_CLAUSE:
+				// TODO
+				break;
+
+			case PDR_INIT_CUBE:
+				// TODO
+				break;
+		}
 		for(size_t c = 1, n = cexTrace.size(); c < n; ++c)
 		{
 			for(size_t i = 0; i < L; ++i)
@@ -2087,6 +2340,55 @@ PdrChecker::collectInd()
 			checkSubsumeOthers(c, infFrame, infFrame);
 			frame[infFrame].push_back(c);
 		}
+}
+
+void
+PdrChecker::newInitState()
+{
+	assert(ntk->getLatchNum() != 0);
+	AigGateID minId = ntk->getLatchID(0),
+	          maxId = minId;
+	for(size_t i = 1, L = ntk->getLatchNum(); i < L; ++i)
+		if(AigGateID latchId = ntk->getLatchID(i);
+		   latchId > maxId)
+			maxId = latchId;
+		else if(latchId < minId)
+			minId = latchId;
+	assert(initState.empty());
+	initState.init(maxId - minId + 1);
+	initIdBase = minId;
+}
+
+void
+PdrChecker::setAllToDC()
+{
+	for(size_t i = 0, L = ntk->getLatchNum(); i < L; ++i)
+		setInitValue(ntk->getLatchID(i), ThreeValue_DC);
+}
+
+bool
+PdrChecker::diffPolar(AigGateLit lit)const
+{
+	/*
+	   | 0 | 1 | X        | 0 | 1 | 2
+	---------------    ---------------
+	 0 | 0 | 1 | 0  ->  1 | 0 | 1 | 0
+	---------------    ---------------
+	 1 | 1 | 0 | 0      0 | 1 | 0 | 0
+
+	    ori | 0.0 | 0.1 | 1.0 | 1.1 | | 2.0 | 2.1
+	->  ------------------------------------------
+	    and |  1  |  0  |  0  |  1  | |  0  |  0 
+
+	from right to left, from MSB to LSB
+	b001001 = d9
+	*/
+	constexpr ThreeValue magicNum = 9;
+	return bool((magicNum >> ((getInitValue(getGateID(lit)) << 1) | isInvNum(lit))) & 1);
+	// Equivalent to
+	constexpr bool LUT[2][3] = {{ true,  false, false },
+	                            { false, true,  false }};
+	return LUT[isInvNum(lit)][getInitValue(getGateID(lit))];
 }
 
 #ifdef UsePatternCheckSAT
@@ -2350,6 +2652,13 @@ PdrChecker::checkOblCommonPart()const
 
 	if(commonPart.size() != oriSize)
 		idxOfLastChange = numObl;
+}
+
+void
+PdrChecker::checkIsDC(const PdrCube& c)const
+{
+	for(AigGateLit lit: c)
+		isDC[getGateID(lit)] = false;
 }
 #endif
 

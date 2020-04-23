@@ -27,7 +27,7 @@ CmdClass(ItpCheck, CMD_TYPE_VERIFICATION, 5, "-TRace",   3,
                                              "-All",     2,
                                              "-Last",    2,
                                              "-TImeout", 3);
-CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 32, "-TRace",     3,
+CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 33, "-TRace",     3,
                                               "-Max",       2,
                                               "-EVent",     3,
                                               "-Backward",  2,
@@ -57,8 +57,9 @@ CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 32, "-TRace",     3,
                                               "-LOCALMix",  7,
                                               "-HALF",      5,
                                               "-SATLimit",  5,
-                                              "-SHare",     3,
-                                              "-OBLLimit",  5);
+                                              "-SHAREInf",  7,
+                                              "-OBLLimit",  5,
+                                              "-SHAREAll",  7);
 CmdClass(PbcCheck, CMD_TYPE_VERIFICATION, 9, "-TRace",     3,
                                              "-Max",       2,
                                              "-Stat",      2,
@@ -351,7 +352,8 @@ ItpCheckCmd::getHelpStr()const
 	                 [-EAger] [-INFinite] [-ASsert]
 	                 [-STat ("atsgprcx")] [-Verbose ("aogpbtcimfx")]
 	                 [<<-LOCALInf | -LOCALAll | -LOCALMix> ((unsigned) backtrackNum matchNum) |
-	                  -HALF ((unsigned) observeNum matchNum)> (unsigned satLimit) [-SHare]]
+	                  -HALF ((unsigned) observeNum matchNum)> (unsigned satLimit)
+	                  [-SHAREInf | -SHAREAll]]
                      [-CHeck]
 --------------------------------------------------------------------------
 	0:  -TRace,     3
@@ -384,8 +386,9 @@ ItpCheckCmd::getHelpStr()const
 	27: -LOCALMix,  7
 	28: -HALF,      5
 	29: -SATLimit,  5
-	30: -SHare,     3
+	30: -SHAREInf,  7
 	31: -OBLLimit,  5
+	32: -SHAREAll,  7
 ========================================================================*/
 
 CmdExecStatus
@@ -770,6 +773,14 @@ PdrCheckCmd::exec(char* options)const
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
 			customOblLimit = true;
 		}
+		else if(optMatch<32>(tokens[i]))
+		{
+			if(pstt == PDR_STIMU_NONE)
+				return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
+			if(psht != PDR_SHARE_NONE)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			psht = PDR_SHARE_ALL;
+		}
 		else return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
 	if(!checkNtk()) return CMD_EXEC_ERROR_INT;
 	SafetyChecker* checker = getChecker<PdrChecker>(aigNtk, outputIdx, trace, timeout, maxFrame, recycleNum, stats,
@@ -798,7 +809,8 @@ PdrCheckCmd::getUsageStr()const
 	       "[-EAger] [-INFinite] [-ASsert]\n"
 	       "[-STat (\"atsgprcx\")] [-Verbose (\"aogpbtcimfx\")]\n"
 	       "[<<-LOCALInf | -LOCALAll | -LOCALMix> ((unsigned) backtrackNum matchNum) |\n"
-	       " -HALF ((unsigned) observeNum matchNum)> (unsigned satLimit) [-SHare]]\n"
+	       " -HALF ((unsigned) observeNum matchNum)> (unsigned satLimit)\n"
+	       " [-SHAREInf | -SHAREAll]]\n"
 	       "[-CHeck]\n";
 }
 
