@@ -21,8 +21,8 @@ class CondStream
 {
 
 template<class T>
-friend CondStream& operator<<(CondStream& cs, const T& t)
-	{ if(cs.active) cs.os << t; return cs; }
+friend CondStream& operator<<(CondStream& cs, T&& t)
+	{ if(cs.active) cs.os << forward<T>(t); return cs; }
 
 using Manipulator = ostream&(*)(ostream&);
 friend CondStream& operator<<(CondStream& cs, Manipulator m)
@@ -34,8 +34,9 @@ public:
 
 	bool isActive()const { return active; }
 
-	void   setActive() { active = true; }
-	void unsetActive() { active = false; }
+	void   setActive(bool a) { active = a; }
+	void   setActive() { setActive(true); }
+	void unsetActive() { setActive(false); }
 	void  flipActive() { active = !active; }
 
 private:

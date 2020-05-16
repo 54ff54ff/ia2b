@@ -88,8 +88,8 @@ Menu(const char* question, const char* options[], size_t numOpt, const char* sep
 				forward(options[curIdx]);
 				for(size_t i = curIdx + 1; i < numOpt; ++i)
 					forward(separator), forward(options[i]);
-				cout << endl;
 				setToOld();
+				cout << endl;
 				return curIdx;
 
 			case LEFT:

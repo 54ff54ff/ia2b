@@ -11,6 +11,8 @@
 namespace _54ff
 {
 
+CondStream sfcMsg(cout);
+
 SafetyChecker::SafetyChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t timeout,
                              bool supportB, bool ntkIsC)
 : ntk          (ntkIsC ? ntkToCheck->copyNtk() : ntkToCheck)
@@ -35,10 +37,13 @@ SafetyChecker::Check()
 { 
 	cout << RepeatChar('=', 36) << endl;
 	isIntSent = false;
+	isStpSent = false;
 	supportBreakNow = supportBreak;
-	oldIntHandler = signal(SIGINT, catchIntsignal);
+	oldIntHandler = signal(SIGINT,  catchIntsignal);
+	oldStpHandler = signal(SIGTSTP, catchStpsignal);
 	check();
-	signal(SIGINT, oldIntHandler);
+	signal(SIGINT,  oldIntHandler);
+	signal(SIGTSTP, oldStpHandler);
 }
 
 bool
@@ -74,10 +79,19 @@ SafetyChecker::catchIntsignal(int)
 	else isIntSent = true;
 }
 
+void
+SafetyChecker::catchStpsignal(int)
+{
+	if(!supportBreakNow)
+		raise(SIGSTOP);
+	else isStpSent = true;
+}
+
 void (*SafetyChecker::oldIntHandler)(int) = 0;
+void (*SafetyChecker::oldStpHandler)(int) = 0;
 bool SafetyChecker::isIntSent = false;
+bool SafetyChecker::isStpSent = false;
 bool SafetyChecker::supportBreakNow = false;
-CondStream SafetyChecker::sfcMsg(cout);
 
 void
 CombChecker::check()

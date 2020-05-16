@@ -28,14 +28,17 @@ CmdClass(PrintNetwork, CMD_TYPE_DISPLAY, 9, "-Summary",   2,
                                             "-LEvel",     3,
                                             "-Influence", 2);
 
-CmdClass(SimpNetwork, CMD_TYPE_SYNTHESIS, 8, "-COMpress",   4,
-                                             "-One",        2,
-                                             "-Two",        2,
-                                             "-CONE",       5,
-                                             "-Reachable",  2,
-                                             "-Fraig",      2,
-                                             "-Balance",    2,
-                                             "-CONStant",   5);
+CmdClass(SimpNetwork, CMD_TYPE_SYNTHESIS, 11, "-COMpress",   4,
+                                              "-One",        2,
+                                              "-Two",        2,
+                                              "-CONE",       5,
+                                              "-Reachable",  2,
+                                              "-Fraig",      2,
+                                              "-Balance",    2,
+                                              "-CONStant",   5,
+                                              "-Verbose",    2,
+                                              "-Pdr",        2,
+                                              "-Limit",      2);
 
 CmdClass(SimuNetwork, CMD_TYPE_VERIFICATION, 3, "-All",    2,
                                                 "-Output", 2,
@@ -340,56 +343,100 @@ PrintNetworkCmd::getHelpStr()const
 }
 
 /*========================================================================
-	SIMPlify NEtwork <-COMpress | -One | -Two | -CONE | -Reachable |
-	                  -Fraig | -Balance | -CONStant>
+	SIMPlify NEtwork <-One | -Two | -Fraig [-Limit (unsigned confLimit)] |
+	                  -COMpress | -CONE | -Reachable |
+	                  -Balance |
+	                  -CONStant [-Pdr [-Limit (unsigned satLimit)]]>
+	                 [-Verbose]
 --------------------------------------------------------------------------
-	0: -COMpress,   4
-	1: -One,        2
-	2: -Two,        2
-	3: -CONE,       5
-	4: -Reachable,  2
-	5: -Fraig,      2
-	6: -Balance,    2
-	7: -CONStant,   5
+	0:  -COMpress,   4
+	1:  -One,        2
+	2:  -Two,        2
+	3:  -CONE,       5
+	4:  -Reachable,  2
+	5:  -Fraig,      2
+	6:  -Balance,    2
+	7:  -CONStant,   5
+	8:  -Verbose,    2
+	9:  -Pdr,        2
+	10: -Limit,      2
 ========================================================================*/
 
 CmdExecStatus
 SimpNetworkCmd::exec(char* options)const
 {
 	enum { NONE, COMPRESS, ONE, TWO, CONE, REACHABLE,
-	       FRAIG, BALANCE, CONSTANT } type = NONE;
-	for(const char* token: breakToTokens(options))
-		if(optMatch<0>(token))
-			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, token); type = COMPRESS; }
-		else if(optMatch<1>(token))
-			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, token); type = ONE; }
-		else if(optMatch<2>(token))
-			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, token); type = TWO; }
-		else if(optMatch<3>(token))
-			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, token); type = CONE; }
-		else if(optMatch<4>(token))
-			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, token); type = REACHABLE; }
-		else if(optMatch<5>(token))
-			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, token); type = FRAIG; }
-		else if(optMatch<6>(token))
-			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, token); type = BALANCE; }
-		else if(optMatch<7>(token))
-			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, token); type = CONSTANT; }
-		else return errorOption(CMD_OPT_ILLEGAL, token);
+	       FRAIG, BALANCE, CONSTANT_MONO, CONSTANT_PDR } type = NONE;
+	bool verbose = false;
+	size_t limit = 0;
+	bool customLimit = false;
+
+	PureStrList tokens = breakToTokens(options);
+	for(size_t i = 0, n = tokens.size(); i < n; ++i)
+		if(optMatch<0>(tokens[i]))
+			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, tokens[i]); type = COMPRESS; }
+		else if(optMatch<1>(tokens[i]))
+			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, tokens[i]); type = ONE; }
+		else if(optMatch<2>(tokens[i]))
+			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, tokens[i]); type = TWO; }
+		else if(optMatch<3>(tokens[i]))
+			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, tokens[i]); type = CONE; }
+		else if(optMatch<4>(tokens[i]))
+			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, tokens[i]); type = REACHABLE; }
+		else if(optMatch<5>(tokens[i]))
+			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, tokens[i]); type = FRAIG; }
+		else if(optMatch<6>(tokens[i]))
+			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, tokens[i]); type = BALANCE; }
+		else if(optMatch<7>(tokens[i]))
+			{ if(type != NONE) return errorOption(CMD_OPT_EXTRA, tokens[i]); type = CONSTANT_MONO; }
+		else if(optMatch<8>(tokens[i]))
+		{
+			if(type == NONE)
+				return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
+			if(verbose)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			verbose = true;
+		}
+		else if(optMatch<9>(tokens[i]))
+		{
+			if(type != CONSTANT_MONO && type != CONSTANT_PDR)
+				return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
+			if(type == CONSTANT_PDR)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			type = CONSTANT_PDR;
+		}
+		else if(optMatch<10>(tokens[i]))
+		{
+			if(customLimit)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			if(type != CONSTANT_PDR && type != FRAIG)
+				return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], limit))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			customLimit = true;
+		}
+		else return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
 	if(type == NONE) return errorOption(CMD_OPT_MISSING);
 	if(!checkNtk()) return CMD_EXEC_ERROR_INT;
-	bool success;
+	bool success = false;
+	simpMsg.setActive(verbose);
 	switch(type)
 	{
 		case NONE: assert(false); break;
-		case COMPRESS:  success = aigNtk->compress();        break;
-		case ONE:       success = aigNtk->oneLvlStrucSimp(); break;
-		case TWO:       success = aigNtk->twoLvlStrucSimp(); break;
-		case CONE:      success = aigNtk->collectCOI();      break;
-		case REACHABLE: success = aigNtk->calReachable();    break;
-		case FRAIG:     success = aigNtk->fraig();           break;
-		case BALANCE:   success = aigNtk->balance();         break;
-		case CONSTANT:  success = aigNtk->rmConstLatch();    break;
+		case ONE   : success = aigNtk->oneLvlStrucSimp(); break;
+		case TWO   : success = aigNtk->twoLvlStrucSimp(); break;
+		case FRAIG : success = aigNtk->fraig(limit);      break;
+
+		case COMPRESS  : success = aigNtk->compress();     break;
+		case CONE      : success = aigNtk->collectCOI();   break;
+		case REACHABLE : success = aigNtk->calReachable(); break;
+
+		case BALANCE : success = aigNtk->balance(); break;
+
+		case CONSTANT_MONO : success = aigNtk->rmConstLatch(false, limit); break;
+		case CONSTANT_PDR  : success = aigNtk->rmConstLatch(true,  limit); break;
 	}
 	return success ? CMD_EXEC_DONE : CMD_EXEC_ERROR_INT;
 }
@@ -397,8 +444,11 @@ SimpNetworkCmd::exec(char* options)const
 const char*
 SimpNetworkCmd::getUsageStr()const
 {
-	return "<-COMpress | -One | -Two | -CONE | -Reachable |\n"
-	       " -Fraig | -Balance | -CONStant>\n";
+	return "<-One | -Two | -Fraig [-Limit (unsigned confLimit)] |\n"
+	       " -COMpress | -CONE | -Reachable |\n"
+	       " -Balance |\n"
+	       " -CONStant [-Pdr [-Limit (unsigned satLimit)]]>\n"
+	       "[-Verbose]\n";
 }
 
 const char*

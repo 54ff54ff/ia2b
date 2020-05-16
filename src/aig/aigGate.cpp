@@ -239,10 +239,10 @@ void
 AigAnd::printMerge(const char* header)const
 {
 	if(header == 0) return;
-	cout << header << " : merge And (" << getGateID() << ") with ";
-	cout << eqGate.getGatePtr()->getTypeStr() << " (";
-	if(eqGate.isInv()) cout << "!";
-	cout << eqGate.getGateID() << ")..." << endl;
+	simpMsg << header << " : merge And (" << getGateID() << ") with ";
+	simpMsg << eqGate.getGatePtr()->getTypeStr() << " (";
+	if(eqGate.isInv()) simpMsg << "!";
+	simpMsg << eqGate.getGateID() << ")..." << endl;
 }
 
 }

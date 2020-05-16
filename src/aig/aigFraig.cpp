@@ -20,23 +20,23 @@ void
 AigFraiger::randomSim()
 {
 	size_t fail = calMaxFail();
-	cout << "Perform Random Simulation. MAX FAIL = " << fail << endl;
+	simpMsg << "Perform Random Simulation. MAX FAIL = " << fail << endl;
 	initFecGrp();
 	unsigned patTime = 1;
-	cout << "#FEC Group = " << fecGroups.size() << ", #Rest fail = " << fail << flush;
+	simpMsg << "#FEC Group = " << fecGroups.size() << ", #Rest fail = " << fail << flush;
 	for(; !fecGroups.empty() && fail > 0; ++patTime)
 	{
 		if(!updateFecGrpRand()) fail -= 1;
-		cout << "\r" << setw(13+20+15+20) << ""
-		     << "\r" << "#FEC Group = " << fecGroups.size()
-		     << ", #Rest fail = " << fail << flush;
+		simpMsg << "\r" << setw(13+20+15+20) << ""
+		        << "\r" << "#FEC Group = " << fecGroups.size()
+		        << ", #Rest fail = " << fail << flush;
 	}
 	feqTarget.init(ntk->getMaxGateNum()); setFeqTarget();
-	cout << "\r" << setw(13+20+15+20) << ""
-		 << "\r" << "#FEC Group = " << fecGroups.size()
-	     << ", total " << patTime * 64 << " patterns simulated"
-	     << " (" << patTime << " times)" << endl
-	     << RepeatChar('-', 72) << endl;
+	simpMsg << "\r" << setw(13+20+15+20) << ""
+		    << "\r" << "#FEC Group = " << fecGroups.size()
+	        << ", total " << patTime * 64 << " patterns simulated"
+	        << " (" << patTime << " times)" << endl
+	        << RepeatChar('-', 72) << endl;
 }
 
 bool
@@ -129,8 +129,8 @@ AigFraiger::simpNtk(AigNtk* ntkToSimp, bool noFraig, bool doTwoLevel)
 		if(a->toDelete())
 			ntk->removeGate(a->getGateID());
 	unsigned totalCount = 0;
-	cout << RepeatChar('-', 72) << endl
-	     << "Optimize = " << fraigCount[FRAIG_OPTIMIZE]
+	simpMsg << RepeatChar('-', 72) << endl;
+	cout << "Optimize = " << fraigCount[FRAIG_OPTIMIZE]
 	     << ", Strash = " << fraigCount[FRAIG_STRASH];
 	totalCount += fraigCount[FRAIG_OPTIMIZE];
 	totalCount += fraigCount[FRAIG_STRASH];
@@ -139,10 +139,10 @@ AigFraiger::simpNtk(AigNtk* ntkToSimp, bool noFraig, bool doTwoLevel)
 	cout << ", Total = " << totalCount << endl;
 	if(!noFraig)
 	{
-		cout << RepeatChar('-', 72) << endl
-		     << "Const     : SAT = " << satCount[3] << ", UNSAT = " << satCount[4] << endl
-		     << "Non Const : Two SAT = " << satCount[2]
-		     << ", One SAT = " << satCount[1] << ", No SAT = " << satCount[0] << endl;
+		simpMsg << RepeatChar('-', 72) << endl
+		        << "Const     : SAT = " << satCount[3] << ", UNSAT = " << satCount[4] << endl
+		        << "Non Const : Two SAT = " << satCount[2]
+		        << ", One SAT = " << satCount[1] << ", No SAT = " << satCount[0] << endl;
 		feqTarget.reset(); simValue.reset(); delete solver;
 		for(LitVec* p: fecGroups) delete p;
 		vector<LitVec*>().swap(fecGroups);
@@ -294,8 +294,8 @@ AigFraiger::updateFecGrpSat(size_t SAT)
 	}
 	newFecGroups.swap(fecGroups);
 	setFeqTarget();
-	cout << "Update by CEX, #FEC Group = " << fecGroups.size()
-	     << ", #Literal in Group = " << litNum << endl;
+	simpMsg << "Update by CEX, #FEC Group = " << fecGroups.size()
+	        << ", #Literal in Group = " << litNum << endl;
 }
 
 void
@@ -334,7 +334,7 @@ AigFraiger::setFeqTarget()
 bool
 AigFraiger::doTwoLevelSimp(AigAnd* a)
 {
-	auto repMsg = [a] { cout << "Rewrite  : replace the fanin of And (" << a->getGateID() << ")..." << endl; };
+	auto repMsg = [a] { simpMsg << "Rewrite  : replace the fanin of And (" << a->getGateID() << ")..." << endl; };
 	while(true)
 	{
 		const AigGateV in0V = a->getFanIn0();

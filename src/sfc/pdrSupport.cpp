@@ -56,6 +56,7 @@ PdrCube::exactOneDiff(const PdrCube& c)const
 	ret.incCount();
 	ret.initMark();
 	ret.setPrevCube(0);
+	ret.setBadDepth(0);
 	return ret;
 }
 
@@ -65,7 +66,8 @@ PdrCube::exactOneLess(const PdrCube& c)const
 	return getSize() + 1 == c.getSize() && subsume(c);
 }
 
-PdrChecker::PdrStimulator::~PdrStimulator()
+void
+PdrChecker::PdrStimulator::printStats()const
 {
 	if(stimuStat.isON())
 		stimuStat->printStat();
@@ -78,19 +80,28 @@ PdrChecker::PdrStimulator::solveCand(const PdrCube& candCube, unsigned mergeType
 	if(stimuStat.isON())
 		stimuStat->startTime();
 
-	cout << "Try " << candCube << flush;
+	if(checker->isVerboseON(PDR_VERBOSE_STIMU))
+		cout << "Try " << candCube << flush;
 	const string resultStr[] = { "PASS", "FAIL", "ABORT" };
 	size_t r;
 
 	if(shareType == PDR_SHARE_ALL)
 	{
+		// Mark the infinite frame
+		if(stimuStat.isON())
+			for(PdrCube& c: checker->frame.back())
+				{ assert(!c.getMarkB()); c.setMarkB(true); }
+
 		// Store the parameter
 		size_t curF = checker->curFrame;
 		checker->curFrame = 1;
 		size_t maxF = checker->maxFrame;
 		checker->maxFrame = MAX_SIZE_T;
 		checker->setTargetCube(candCube);
-		checker->stimulator = 0;
+		PdrClsStimulator* clsStimuor = checker->clsStimulator;
+		checker->clsStimulator = 0;
+		PdrOblStimulator* oblStimuor = checker->oblStimulator;
+		checker->oblStimulator = 0;
 		vector<deque<PdrCube>> badDV(move(checker->badDequeVec));
 		checker->badDequeVec.resize(checker->oblType == PDR_OBL_PUSH ? checker->frame.size()
 		                                                             : checker->frame.size() - 1);
@@ -115,16 +126,17 @@ PdrChecker::PdrStimulator::solveCand(const PdrCube& candCube, unsigned mergeType
 			case PDR_RESULT_SAT   : r = 1; break;
 			default               : r = 2; break;
 		}
-		cout << " -> " << resultStr[r] << endl;
 		if(verbose)
-			cout << "#SAT query = " << checker->totalSatQuery << endl;
+			cout << " -> " << resultStr[r] << endl
+			     << "#SAT query = " << checker->totalSatQuery << endl;
 		if(r == 1) addToFailed(candCube);
 
 		// Restore the parameter
 		checker->curFrame = curF;
 		checker->maxFrame = maxF;
 		checker->resetTargetCube();
-		checker->stimulator = this;
+		checker->clsStimulator = clsStimuor;
+		checker->oblStimulator = oblStimuor;
 		checker->badDequeVec.swap(badDV);
 		checker->badDequeVec.resize(checker->oblType == PDR_OBL_PUSH ? checker->frame.size()
 		                                                             : checker->frame.size() - 1);
@@ -135,10 +147,22 @@ PdrChecker::PdrStimulator::solveCand(const PdrCube& candCube, unsigned mergeType
 		checker->numObl = numO;
 		checker->numOblLimit = numOL;
 		checker->verbosity = _verbosity;
+
+		// Count the infinite frame
+		if(stimuStat.isON())
+		{
+			size_t numNewCls = 0;
+			for(PdrCube& c: checker->frame.back())
+				if(c.getMarkB())
+					{ numNewCls += 1; c.setMarkB(false); }
+			stimuStat->incInfClsNum(numNewCls);
+		}
 	}
 	else
 	{
-		PdrChecker* stimuChecker = checker->cloneChecker(satLimit);
+		PdrChecker* stimuChecker = checker->cloneChecker();
+		stimuChecker->setSatLimit(satLimit);
+		stimuChecker->disablePrintFrame();
 		stimuChecker->setTargetCube(candCube);
 		if(shareType == PDR_SHARE_INF)
 		{
@@ -156,9 +180,9 @@ PdrChecker::PdrStimulator::solveCand(const PdrCube& candCube, unsigned mergeType
 			case PDR_RESULT_SAT   : r = 1; break;
 			default               : r = 2; break;
 		}
-		cout << " -> " << resultStr[r] << endl;
 		if(checker->isVerboseON(PDR_VERBOSE_STIMU))
-			cout << "#SAT query = " << stimuChecker->totalSatQuery;
+			cout << " -> " << resultStr[r] << endl
+			     << "#SAT query = " << stimuChecker->totalSatQuery;
 
 		if(shareType == PDR_SHARE_INF)
 		{
@@ -190,18 +214,12 @@ PdrChecker::PdrStimulator::solveCand(const PdrCube& candCube, unsigned mergeType
 		else
 		{
 			if(mergeType & (unsigned(1) << r))
-				checker->mergeInf(stimuChecker->getCurIndSet(false), true);
+			{
+				size_t numNewCls = checker->mergeInf(stimuChecker->getCurIndSet(false), true);
+				incInfClsNum(numNewCls);
+			}
 			if(r != 0) addToFailed(candCube);
 		}
-
-streamsize ss = cout.precision();
-cout << fixed << setprecision(3);
-cout << "STIMU "
-     << (double(stimuChecker->numConf) / (stimuChecker->totalSatQuery)) << " "
-     << (double(stimuChecker->numDeci) / (stimuChecker->totalSatQuery)) << " "
-     << stimuChecker->maxObl << " " << stimuChecker->maxTree << endl;
-cout << setprecision(ss);
-
 		delete stimuChecker;
 	}
 
@@ -212,27 +230,26 @@ cout << setprecision(ss);
 }
 
 void
-PdrChecker::PdrStimulatorLocalInfAll::stimulateWithOneCube(const PdrTCube& tc)
+PdrChecker::PdrClsStimulatorLocalInfAll::stimulateWithOneCube(const PdrTCube& tc)
 {
+/*
+size_t b = backtrackNum, m = matchNum;
+if(tc.getFrame() == FRAME_INF)
+	backtrackNum = 20, matchNum = 1;
+else
+	backtrackNum = 10, matchNum = 2;
+*/
+
 	if(tc.getFrame() != FRAME_INF && onlyInf)
 		return;
 	const PdrCube& blockCube = tc.getCube();
 	const vector<PdrCube>& targetFrame = tc.getFrame() == FRAME_INF ? checker->getInfFrame()
 	                                                                : checker->frame[tc.getFrame()];
-//	assert(blockCube == targetFrame.back());
 	size_t s = targetFrame.size() - 1;
 	size_t i = backtrackNum > s ? 0 : s - backtrackNum;
 	vector<pair<PdrCube, size_t>> candidate;
-//cout << RepeatChar('-', 36) << endl;
-//cout << blockCube << endl;
-//cout << RepeatChar('=', 36) << endl;
 	for(; i < s; ++i)
 	{
-//cout << targetFrame[i] << endl;
-
-//for(const auto&[candCube, candNum]: candidate)
-//	cout << candCube << " " << candNum << endl;
-//cout << RepeatChar('-', 36) << endl;
 		bool finish = false;
 		for(auto&[candCube, candNum]: candidate)
 			if(candCube.exactOneLess(targetFrame[i]))
@@ -244,45 +261,15 @@ PdrChecker::PdrStimulatorLocalInfAll::stimulateWithOneCube(const PdrTCube& tc)
 			else                           candidate.emplace_back(common, 1); }
 	}
 
-//cout << RepeatChar('-', 36) << endl;
-//for(const auto&[candCube, candNum]: candidate)
-//	cout << candCube << " " << candNum << endl;
-
-//	sfcMsg.unsetActive();
 	for(const auto&[candCube, candNum]: candidate)
 		if(candNum >= matchNum)
 			solveCand(candCube, 0b111);
 
-/*
-	for(const auto&[candCube, candNum]: candidate)
-		if(candNum >= matchNum)
-		{
-			if(stimuStat.isON())
-				stimuStat->startTime();
-			PdrChecker* stimuChecker = checker->cloneChecker();
-			stimuChecker->setTargetCube(candCube);
-			cout << "Try " << candCube << flush;
-			size_t r;
-			switch(stimuChecker->checkInt())
-			{
-				case PDR_RESULT_UNSAT : cout << " -> PASS";  result = true;         r = 0; break;
-				case PDR_RESULT_SAT   : cout << " -> FAIL";  addToFailed(candCube); r = 1; break;
-				default               : cout << " -> ABORT"; addToFailed(candCube); r = 2; break;
-			}
-			checker->mergeInf(stimuChecker->getCurIndSet(false), true);
-			cout << ", " << stimuChecker->totalSatQuery << endl;
-			delete stimuChecker;
-			if(stimuStat.isON())
-				stimuStat->countOne(r),
-				stimuStat->finishTime();
-		}
-	sfcMsg.setActive();
-*/
-//cout << RepeatChar('-', 36) << endl;
+//backtrackNum = b, matchNum = m;
 }
 
 void
-PdrChecker::PdrStimulatorLocalMix::stimulateWithOneCube(const PdrTCube& tc)
+PdrChecker::PdrClsStimulatorLocalMix::stimulateWithOneCube(const PdrTCube& tc)
 {
 	const PdrCube& blockCube = tc.getCube();
 	vector<pair<PdrCube, size_t>> candidate;
@@ -314,7 +301,7 @@ PdrChecker::PdrStimulatorLocalMix::stimulateWithOneCube(const PdrTCube& tc)
 }
 
 void
-PdrChecker::PdrStimulatorHalf::stimulateAtEndOfFrame()
+PdrChecker::PdrClsStimulatorHalf::stimulateAtEndOfFrame()
 {
 	const vector<PdrCube>& inf = checker->getInfFrame();
 	
@@ -349,6 +336,159 @@ PdrChecker::PdrStimulatorHalf::stimulateAtEndOfFrame()
 	for(const auto&[candCube, candNum]: candidate)
 		if(candNum >= matchNum)
 			solveCand(candCube, 0b111);
+}
+
+void
+PdrChecker::PdrOblStimulatorAll::resetInt()
+{
+	numObl = 0;
+	commonPart.clear();
+}
+
+void
+PdrChecker::PdrOblStimulatorAll::stimulateInt()
+{
+	if(!commonPart.empty())
+	{
+		PdrCube candidate(commonPart);
+		if(notFailed(candidate)) {
+			if(checker->isInitial(candidate)) addToFailed(candidate);
+			else                              solveCand(candidate, 0b111); }
+	}
+	else if(checker->isVerboseON(PDR_VERBOSE_STIMU))
+		cout << "No common part of proof obligation!" << endl;
+}
+
+void
+PdrChecker::PdrOblStimulatorAll::checkCommonPart(const PdrCube& c)
+{
+	if(++numObl == 1)
+	{
+		assert(commonPart.empty());
+		for(AigGateLit lit: c)
+			commonPart.push_back(lit);
+	}
+	else
+	{
+		constexpr bool trivial = true;
+		if constexpr(trivial)
+		{
+			size_t s = 0;
+			for(size_t i = 0, n = commonPart.size(); i < n; ++i)
+				if(inList(c, commonPart[i]))
+					commonPart[s++] = commonPart[i];
+			commonPart.resize(s);
+		}
+		else
+		{}
+	}
+}
+
+void
+PdrChecker::PdrOblStimulatorAll::printCommon()const
+{
+	cout << RepeatChar('=', 36) << endl;
+	if(numObl == 0)
+		cout << "No proof obligation!" << endl;
+	else
+	{
+		cout << "Number of proof obligation = " << numObl << endl
+		     << "Common part:";
+		if(commonPart.empty())
+			cout << " None";
+		else
+			for(AigGateLit lit: commonPart)
+				cout << " " << (isInv(lit) ? "!" : "") << getGateID(lit);
+		cout << endl;
+	}
+}
+
+void
+PdrChecker::PdrOblStimulatorDepth::resetInt()
+{
+	for(size_t& n: numObl)
+		n = 0;
+	for(vector<AigGateLit>& cp: commonPart)
+		cp.clear();
+}
+
+void
+PdrChecker::PdrOblStimulatorDepth::stimulateInt()
+{
+	size_t b = commonPart.size() - 1;
+	for(; b != size_t(-1) && commonPart.empty(); --b);
+	for(; b != size_t(-1); --b)
+		if(!commonPart[b].empty())
+		{
+			PdrCube candidate(commonPart[b]);
+			if(notFailed(candidate)) {
+				if(checker->isInitial(candidate)) addToFailed(candidate);
+				else                              solveCand(candidate, 0b111); }
+		}
+		else if(checker->isVerboseON(PDR_VERBOSE_STIMU))
+			cout << "No common part of proof obligation for bad depth " << b << "!" << endl;
+}
+
+void
+PdrChecker::PdrOblStimulatorDepth::checkCommonPart(const PdrCube& c)
+{
+	assert(numObl.size() == commonPart.size());
+	const unsigned badDepth = c.getBadDepth();
+	if(badDepth >= commonPart.size())
+	{
+		assert(badDepth == commonPart.size());
+		numObl.push_back(0);
+		commonPart.emplace_back();
+	}
+	vector<AigGateLit>& common = commonPart[badDepth];
+	if(++numObl[badDepth] == 1)
+	{
+		assert(common.empty());
+		for(AigGateLit lit: c)
+			common.push_back(lit);
+	}
+	else
+	{
+		constexpr bool trivial = true;
+		if constexpr(trivial)
+		{
+			size_t s = 0;
+			for(size_t i = 0, n = common.size(); i < n; ++i)
+				if(inList(c, common[i]))
+					common[s++] = common[i];
+			common.resize(s);
+		}
+		else
+		{}
+	}
+}
+
+void
+PdrChecker::PdrOblStimulatorDepth::printCommon()const
+{
+	cout << RepeatChar('=', 36) << endl;
+	size_t end = 0;
+	for(size_t n = numObl.size(); end < n && numObl[end] != 0; ++end);
+	if(end == 0)
+		cout << "No proof obligation!" << endl;
+	else
+	{
+		cout << "Number of proof obligation:" << endl;
+		for(size_t i = 0; i < end; ++i)
+			cout << i << ": " << numObl[i] << endl;
+		cout << RepeatChar('-', 36) << endl;
+		cout << "Common part:" << endl;
+		for(size_t i = 0; i < end; ++i)
+		{
+			cout << i << ":";
+			if(commonPart[i].empty())
+				cout << " None";
+			else
+				for(AigGateLit lit: commonPart[i])
+					cout << " " << (isInv(lit) ? "!" : "") << getGateID(lit);
+			cout << endl;
+		}
+	}
 }
 
 }

@@ -11,6 +11,7 @@
 #include <functional>
 #include <unordered_set>
 #include "aigGate.h"
+#include "condStream.h"
 using namespace std;
 
 namespace _54ff
@@ -33,6 +34,8 @@ enum AigSimPrintType
 	AIG_SIM_PRINT_PO,
 	AIG_SIM_PRINT_LATCH
 };
+
+extern CondStream simpMsg;
 
 class AigNtk
 {
@@ -107,9 +110,9 @@ public:
 	bool twoLvlStrucSimp();
 	bool collectCOI();
 	bool calReachable();
-	bool fraig();
+	bool fraig(size_t);
 	bool balance();
-	bool rmConstLatch();
+	bool rmConstLatch(bool, size_t);
 
 	bool simulate(const char*, AigSimPrintType, const char*)const;
 

@@ -16,6 +16,8 @@ using namespace std;
 namespace _54ff
 {
 
+extern CondStream  sfcMsg;
+
 class SafetyChecker
 {
 public:
@@ -26,15 +28,18 @@ public:
 
 	virtual bool isComb()const { return false; }
 
-	bool checkBreakCond()const;
-
 protected:
 	virtual void check() = 0;
 
 	AigGateV buildInit();
 
+	bool checkBreakCond()const;
+	bool checkIsStopped()const { return isStpSent; }
+	void resetStop()const { isStpSent = false; }
 	static void catchIntsignal(int);
 	static void (*oldIntHandler)(int);
+	static void catchStpsignal(int);
+	static void (*oldStpHandler)(int);
 
 protected:
 	AigNtk*     ntk;
@@ -44,10 +49,10 @@ protected:
 	bool        ntkIsCopied;
 	clock_t     timeBound;
 
+	// TODO, support suspending
 	static bool  isIntSent;
+	static bool  isStpSent;
 	static bool  supportBreakNow;
-
-	static CondStream  sfcMsg;
 };
 
 #define SC_Derived(checkerName, supportB, ntkIsC)                                  \

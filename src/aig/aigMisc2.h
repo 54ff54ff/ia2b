@@ -19,20 +19,16 @@ namespace _54ff
 class AigConster
 {
 public:
-	AigConster(AigNtk* n)
-	: ntk      (n)
-	, zeroCand (ntk->getLatchNum())
-	{
-		for(size_t i = 0, L = zeroCand.size(); i < L; ++i)
-			zeroCand[i] = ntk->getLatchID(i);
-	}
+	AigConster(AigNtk* n): ntk(n) {}
 
-	bool doSimp();
+	bool doSimpMono();
+	bool doSimpPdr(size_t);
 
 private:
-	CirSolver*         solver;
-	AigNtk*            ntk;
-	vector<AigGateID>  zeroCand;
+	void replaceWithZero(const vector<AigGateID>&);
+
+private:
+	AigNtk*  ntk;
 };
 
 }

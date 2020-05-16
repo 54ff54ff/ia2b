@@ -21,7 +21,7 @@ using FecHash = unordered_map<size_t, LitVec*>;
 enum FraigType { FRAIG_OPTIMIZE = 0, FRAIG_REWRITE, FRAIG_STRASH, FRAIG_FRAIG, FRAIG_TOTAL };
 
 public:
-	bool funcSimp (AigNtk* ntkToSimp) { return simpNtk(ntkToSimp, false, false); }
+	bool funcSimp (AigNtk* ntkToSimp, size_t confL) { confLimit = confL; return simpNtk(ntkToSimp, false, false); }
 	bool oneLvlStrucSimp(AigNtk* ntkToSimp) { return simpNtk(ntkToSimp, true, false); }
 	bool twoLvlStrucSimp(AigNtk* ntkToSimp) { return simpNtk(ntkToSimp, true, true); }
 
@@ -74,6 +74,7 @@ private:
 	vector<LitVec*>   fecGroups;
 	Array<AigGateID>  feqTarget;
 	Array<size_t>     simValue;
+	size_t            confLimit;
 
 	static const char* fraigHeader[FRAIG_TOTAL];
 	static unsigned fraigCount[FRAIG_TOTAL];

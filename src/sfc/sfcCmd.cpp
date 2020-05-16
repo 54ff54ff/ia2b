@@ -27,7 +27,7 @@ CmdClass(ItpCheck, CMD_TYPE_VERIFICATION, 5, "-TRace",   3,
                                              "-All",     2,
                                              "-Last",    2,
                                              "-TImeout", 3);
-CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 33, "-TRace",     3,
+CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 36, "-TRace",     3,
                                               "-Max",       2,
                                               "-EVent",     3,
                                               "-Backward",  2,
@@ -59,7 +59,10 @@ CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 33, "-TRace",     3,
                                               "-SATLimit",  5,
                                               "-SHAREInf",  7,
                                               "-OBLLimit",  5,
-                                              "-SHAREAll",  7);
+                                              "-SHAREAll",  7,
+                                              "-LAzy",      3,
+                                              "-OBLAll",    5,
+                                              "-OBLDepth",  5);
 CmdClass(PbcCheck, CMD_TYPE_VERIFICATION, 9, "-TRace",     3,
                                              "-Max",       2,
                                              "-Stat",      2,
@@ -349,11 +352,12 @@ ItpCheckCmd::getHelpStr()const
 	                 [<-ACtivity | -Decay> [-REVerse]] [-SElf]
 	                 [-Push | -NOPush] [-Queue]
 	                 [-APPROXGen | -NOGen]
-	                 [-EAger] [-INFinite] [-ASsert]
+	                 [-EAger] [-INFinite] [-ASsert] [-LAzy]
 	                 [-STat ("atsgprcx")] [-Verbose ("aogpbtcimfx")]
-	                 [<<-LOCALInf | -LOCALAll | -LOCALMix> ((unsigned) backtrackNum matchNum) |
-	                  -HALF ((unsigned) observeNum matchNum)> (unsigned satLimit)
-	                  [-SHAREInf | -SHAREAll]]
+	                 [<<-LOCALInf | -LOCALAll | -LOCALMix> (unsigned backtrackNum matchNum) |
+	                    -HALF                              (unsigned observeNum matchNum)   |
+	                   <-OBLAll | -OBLDepth>               (unsigned treeSizeLimit)>
+	                  (unsigned satLimit) [-SHAREInf | -SHAREAll]]
                      [-CHeck]
 --------------------------------------------------------------------------
 	0:  -TRace,     3
@@ -389,6 +393,9 @@ ItpCheckCmd::getHelpStr()const
 	30: -SHAREInf,  7
 	31: -OBLLimit,  5
 	32: -SHAREAll,  7
+	33: -LAzy,      3
+	34: -OBLAll,    5
+	35: -OBLDepth,  5
 ========================================================================*/
 
 CmdExecStatus
@@ -423,6 +430,8 @@ PdrCheckCmd::exec(char* options)const
 	bool assertF   = false;
 	bool recycleBQ = false;
 	bool cInNeedF  = false;
+	bool lazyP     = false;
+	bool sortByBD  = false; //TODO, set option
 
 	size_t stats     = 0;
 	size_t verbosity = 0;
@@ -433,9 +442,15 @@ PdrCheckCmd::exec(char* options)const
 	size_t oblL = 0;
 	bool customOblLimit = false;
 
-	PdrStimuType pstt = PDR_STIMU_NONE;
-	PdrShareType psht = PDR_SHARE_NONE;
-	size_t stimuNum1, stimuNum2, stimuNum3;
+	PdrClsStimuType pcstt = PDR_CLS_STIMU_NONE;
+	PdrShareType    pcsht = PDR_SHARE_NONE;
+	size_t clsStimuNum1, clsStimuNum2, clsStimuNum3;
+
+	PdrOblStimuType postt = PDR_OBL_STIMU_NONE;
+	PdrShareType    posht = PDR_SHARE_NONE;
+	size_t oblStimuNum1, oblStimuNum2;
+
+	enum StimuType { NONE, CLS, OBL };
 
 	for(size_t i = 1, n = tokens.size(); i < n; ++i)
 		if(optMatch<0>(tokens[i]))
@@ -656,94 +671,98 @@ PdrCheckCmd::exec(char* options)const
 		}
 		else if(optMatch<25>(tokens[i]))
 		{
-			if(pstt != PDR_STIMU_NONE)
+			if(pcstt != PDR_CLS_STIMU_NONE ||
+			   postt != PDR_OBL_STIMU_NONE)
 				return errorOption(CMD_OPT_EXTRA, tokens[i]);
 			if(++i == n)
 				return errorOption(CMD_OPT_MISSING);
-			if(!myStrToUInt(tokens[i], stimuNum1))
+			if(!myStrToUInt(tokens[i], clsStimuNum1))
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
 			if(++i == n)
 				return errorOption(CMD_OPT_MISSING);
-			if(!myStrToUInt(tokens[i], stimuNum2))
+			if(!myStrToUInt(tokens[i], clsStimuNum2))
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
 			if(++i == n)
 				return errorOption(CMD_OPT_MISSING);
-			if(!myStrToUInt(tokens[i], stimuNum3))
+			if(!myStrToUInt(tokens[i], clsStimuNum3))
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
-			if(stimuNum2 == 0)
+			if(clsStimuNum2 == 0)
 				{ cerr << "[Error] matchNum cannot be 0!" << endl; return CMD_EXEC_ERROR_EXT; }
-			if(stimuNum1 < stimuNum2) {
-				cerr << "[Error] backtrackNum (" << stimuNum1 << ") is smaller than "
-				     << "matchNum (" << stimuNum2 << ")!" << endl; return CMD_EXEC_ERROR_EXT; }
-			pstt = PDR_STIMU_LOCAL_INF;
+			if(clsStimuNum1 < clsStimuNum2) {
+				cerr << "[Error] backtrackNum (" << clsStimuNum1 << ") is smaller than "
+				     << "matchNum (" << clsStimuNum2 << ")!" << endl; return CMD_EXEC_ERROR_EXT; }
+			pcstt = PDR_CLS_STIMU_LOCAL_INF;
 		}
 		else if(optMatch<26>(tokens[i]))
 		{
-			if(pstt != PDR_STIMU_NONE)
+			if(pcstt != PDR_CLS_STIMU_NONE ||
+			   postt != PDR_OBL_STIMU_NONE)
 				return errorOption(CMD_OPT_EXTRA, tokens[i]);
 			if(++i == n)
 				return errorOption(CMD_OPT_MISSING);
-			if(!myStrToUInt(tokens[i], stimuNum1))
+			if(!myStrToUInt(tokens[i], clsStimuNum1))
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
 			if(++i == n)
 				return errorOption(CMD_OPT_MISSING);
-			if(!myStrToUInt(tokens[i], stimuNum2))
+			if(!myStrToUInt(tokens[i], clsStimuNum2))
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
 			if(++i == n)
 				return errorOption(CMD_OPT_MISSING);
-			if(!myStrToUInt(tokens[i], stimuNum3))
+			if(!myStrToUInt(tokens[i], clsStimuNum3))
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
-			if(stimuNum2 == 0)
+			if(clsStimuNum2 == 0)
 				{ cerr << "[Error] matchNum cannot be 0!" << endl; return CMD_EXEC_ERROR_EXT; }
-			if(stimuNum1 < stimuNum2) {
-				cerr << "[Error] backtrackNum (" << stimuNum1 << ") is smaller than "
-				     << "matchNum (" << stimuNum2 << ")!" << endl; return CMD_EXEC_ERROR_EXT; }
-			pstt = PDR_STIMU_LOCAL_ALL;
+			if(clsStimuNum1 < clsStimuNum2) {
+				cerr << "[Error] backtrackNum (" << clsStimuNum1 << ") is smaller than "
+				     << "matchNum (" << clsStimuNum2 << ")!" << endl; return CMD_EXEC_ERROR_EXT; }
+			pcstt = PDR_CLS_STIMU_LOCAL_ALL;
 		}
 		else if(optMatch<27>(tokens[i]))
 		{
-			if(pstt != PDR_STIMU_NONE)
+			if(pcstt != PDR_CLS_STIMU_NONE ||
+			   postt != PDR_OBL_STIMU_NONE)
 				return errorOption(CMD_OPT_EXTRA, tokens[i]);
 			if(++i == n)
 				return errorOption(CMD_OPT_MISSING);
-			if(!myStrToUInt(tokens[i], stimuNum1))
+			if(!myStrToUInt(tokens[i], clsStimuNum1))
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
 			if(++i == n)
 				return errorOption(CMD_OPT_MISSING);
-			if(!myStrToUInt(tokens[i], stimuNum2))
+			if(!myStrToUInt(tokens[i], clsStimuNum2))
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
 			if(++i == n)
 				return errorOption(CMD_OPT_MISSING);
-			if(!myStrToUInt(tokens[i], stimuNum3))
+			if(!myStrToUInt(tokens[i], clsStimuNum3))
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
-			if(stimuNum2 == 0)
+			if(clsStimuNum2 == 0)
 				{ cerr << "[Error] matchNum cannot be 0!" << endl; return CMD_EXEC_ERROR_EXT; }
-			if(stimuNum1 < stimuNum2) {
-				cerr << "[Error] backtrackNum (" << stimuNum1 << ") is smaller than "
-				     << "matchNum (" << stimuNum2 << ")!" << endl; return CMD_EXEC_ERROR_EXT; }
-			pstt = PDR_STIMU_LOCAL_MIX;
+			if(clsStimuNum1 < clsStimuNum2) {
+				cerr << "[Error] backtrackNum (" << clsStimuNum1 << ") is smaller than "
+				     << "matchNum (" << clsStimuNum2 << ")!" << endl; return CMD_EXEC_ERROR_EXT; }
+			pcstt = PDR_CLS_STIMU_LOCAL_MIX;
 		}
 		else if(optMatch<28>(tokens[i]))
 		{
-			if(pstt != PDR_STIMU_NONE)
+			if(pcstt != PDR_CLS_STIMU_NONE ||
+			   postt != PDR_OBL_STIMU_NONE)
 				return errorOption(CMD_OPT_EXTRA, tokens[i]);
 			if(++i == n)
 				return errorOption(CMD_OPT_MISSING);
-			if(!myStrToUInt(tokens[i], stimuNum1))
+			if(!myStrToUInt(tokens[i], clsStimuNum1))
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
 			if(++i == n)
 				return errorOption(CMD_OPT_MISSING);
-			if(!myStrToUInt(tokens[i], stimuNum2))
+			if(!myStrToUInt(tokens[i], clsStimuNum2))
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
 			if(++i == n)
 				return errorOption(CMD_OPT_MISSING);
-			if(!myStrToUInt(tokens[i], stimuNum3))
+			if(!myStrToUInt(tokens[i], clsStimuNum3))
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
-			if(stimuNum1 == 0)
+			if(clsStimuNum1 == 0)
 				{ cerr << "[Error] observeNum cannot be 0!" << endl; return CMD_EXEC_ERROR_EXT; }
-			if(stimuNum2 < 2)
+			if(clsStimuNum2 < 2)
 				{ cerr << "[Error] matchNum cannot be less than 2!" << endl; return CMD_EXEC_ERROR_EXT; }
-			pstt = PDR_STIMU_HALF;
+			pcstt = PDR_CLS_STIMU_HALF;
 		}
 		else if(optMatch<29>(tokens[i]))
 		{
@@ -756,12 +775,23 @@ PdrCheckCmd::exec(char* options)const
 			customSatLimit = true;
 		}
 		else if(optMatch<30>(tokens[i]))
-		{
-			if(pstt == PDR_STIMU_NONE)
-				return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
-			if(psht != PDR_SHARE_NONE)
+		{cout << "Hehe" << endl;
+			if(pcsht != PDR_SHARE_NONE ||
+			   posht != PDR_SHARE_NONE)
 				return errorOption(CMD_OPT_EXTRA, tokens[i]);
-			psht = PDR_SHARE_INF;
+			StimuType st = NONE;
+			assert(pcstt == PDR_CLS_STIMU_NONE ||
+			       postt == PDR_OBL_STIMU_NONE);
+			if(pcstt != PDR_CLS_STIMU_NONE)
+				st = CLS;
+			if(postt != PDR_OBL_STIMU_NONE)
+				st = OBL;
+			switch(st)
+			{
+				case NONE : return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
+				case CLS  : pcsht = PDR_SHARE_INF; break;
+				case OBL  : posht = PDR_SHARE_INF; break;
+			}
 		}
 		else if(optMatch<31>(tokens[i]))
 		{
@@ -775,19 +805,71 @@ PdrCheckCmd::exec(char* options)const
 		}
 		else if(optMatch<32>(tokens[i]))
 		{
-			if(pstt == PDR_STIMU_NONE)
-				return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
-			if(psht != PDR_SHARE_NONE)
+			if(pcsht != PDR_SHARE_NONE ||
+			   posht != PDR_SHARE_NONE)
 				return errorOption(CMD_OPT_EXTRA, tokens[i]);
-			psht = PDR_SHARE_ALL;
+			StimuType st = NONE;
+			assert(pcstt == PDR_CLS_STIMU_NONE ||
+			       postt == PDR_OBL_STIMU_NONE);
+			if(pcstt != PDR_CLS_STIMU_NONE)
+				st = CLS;
+			if(postt != PDR_OBL_STIMU_NONE)
+				st = OBL;
+			switch(st)
+			{
+				case NONE : return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
+				case CLS  : pcsht = PDR_SHARE_ALL; break;
+				case OBL  : posht = PDR_SHARE_ALL; break;
+			}
+		}
+		else if(optMatch<33>(tokens[i]))
+		{
+			if(lazyP)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			lazyP = true;
+		}
+		else if(optMatch<34>(tokens[i]))
+		{
+			if(pcstt != PDR_CLS_STIMU_NONE ||
+			   postt != PDR_OBL_STIMU_NONE)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], oblStimuNum1))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], oblStimuNum2))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(oblStimuNum1 == 0)
+				{ cerr << "[Error] treeSizeLimit cannot be 0!" << endl; return CMD_EXEC_ERROR_EXT; }
+			postt = PDR_OBL_STIMU_ALL;
+		}
+		else if(optMatch<35>(tokens[i]))
+		{
+			if(pcstt != PDR_CLS_STIMU_NONE ||
+			   postt != PDR_OBL_STIMU_NONE)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], oblStimuNum1))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], oblStimuNum2))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			if(oblStimuNum1 == 0)
+				{ cerr << "[Error] treeSizeLimit cannot be 0!" << endl; return CMD_EXEC_ERROR_EXT; }
+			postt = PDR_OBL_STIMU_DEPTH;
 		}
 		else return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
 	if(!checkNtk()) return CMD_EXEC_ERROR_INT;
 	SafetyChecker* checker = getChecker<PdrChecker>(aigNtk, outputIdx, trace, timeout, maxFrame, recycleNum, stats,
 	                                                psit, port, pobt, pdt, ppt, pgt,
-	                                                rInf, cInNeedC, cSelf, assertF, recycleBQ, cInNeedF,
+	                                                rInf, cInNeedC, cSelf, assertF, recycleBQ, cInNeedF, lazyP, sortByBD,
 	                                                satQL, oblL, verbosity, checkII,
-	                                                pstt, psht, stimuNum1, stimuNum2, stimuNum3);
+	                                                pcstt, pcsht, clsStimuNum1, clsStimuNum2, clsStimuNum3,
+	                                                postt, posht, oblStimuNum1, oblStimuNum2);
 	if(checker == 0) return CMD_EXEC_ERROR_INT;
 	checker->Check(); delete checker; return CMD_EXEC_DONE;
 }
@@ -806,11 +888,12 @@ PdrCheckCmd::getUsageStr()const
 	       "[<-ACtivity | -Decay> [-REVerse]] [-SElf]\n"
 	       "[-Push | -NOPush] [-Queue]\n"
 	       "[-APPROXGen | -NOGen]\n"
-	       "[-EAger] [-INFinite] [-ASsert]\n"
+	       "[-EAger] [-INFinite] [-ASsert] [-LAzy]\n"
 	       "[-STat (\"atsgprcx\")] [-Verbose (\"aogpbtcimfx\")]\n"
-	       "[<<-LOCALInf | -LOCALAll | -LOCALMix> ((unsigned) backtrackNum matchNum) |\n"
-	       " -HALF ((unsigned) observeNum matchNum)> (unsigned satLimit)\n"
-	       " [-SHAREInf | -SHAREAll]]\n"
+	       "[<<-LOCALInf | -LOCALAll | -LOCALMix> (unsigned backtrackNum matchNum) |\n"
+	       "   -HALF                              (unsigned observeNum matchNum)   |\n"
+	       "  <-OBLAll | -OBLDepth>               (unsigned treeSizeLimit)>\n"
+	       " (unsigned satLimit) [-SHAREInf | -SHAREAll]]\n"
 	       "[-CHeck]\n";
 }
 

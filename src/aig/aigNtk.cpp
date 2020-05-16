@@ -20,6 +20,7 @@ namespace _54ff
 {
 
 AigNtk* aigNtk = 0;
+CondStream simpMsg(cout);
 
 AigGate* checkGate(AigGateID id, bool report)
 {
@@ -316,17 +317,28 @@ AigNtk::printCone(Array<bool>& latchInCone, size_t maxDepth, size_t depth)const
 bool
 AigNtk::compress()
 {
-	if(recycleList.empty()) return true;
-	AigGateID j = 1;
-	unsigned m = getMaxGateNum();
-	Array<AigGateID> idMap(m);
-	for(AigGateID i = 1; i < m; ++i)
-		if(AigGate* g = getGate(i); g != 0)
-			{ g->changeID(j); idMap[i] = j; setGate(j++, g); }
-	for(AigGateID& id: PIList)    id = idMap[id];
-	for(AigGateID& id: latchList) id = idMap[id];
-	for(AigGateID& id: POList)    id = idMap[id];
-	gateList.resize(j);
+	if(!recycleList.empty())
+	{
+		AigGateID j = 1;
+		unsigned m = getMaxGateNum();
+		Array<AigGateID> idMap(m);
+		for(AigGateID i = 1; i < m; ++i)
+			if(AigGate* g = getGate(i); g != 0)
+			{
+				idMap[i] = j;
+				if(i != j)
+				{
+					g->changeID(j); setGate(j, g);
+					simpMsg << "Change gate ID " << i << " to " << j << "..." << endl;
+				}
+				j += 1;
+			}
+		for(AigGateID& id: PIList)    id = idMap[id];
+		for(AigGateID& id: latchList) id = idMap[id];
+		for(AigGateID& id: POList)    id = idMap[id];
+		gateList.resize(j);
+		simpMsg << RepeatChar('-', 36) << endl;
+	}
 	cout << "Remove " << recycleList.size() << " recycled!" << endl;
 	vector<AigGateID>().swap(recycleList);
 	return true;
@@ -361,8 +373,8 @@ AigNtk::collectCOI()
 				case AIG_AND   :   andCount += 1; break;
 				default: continue;
 			}
-			cout << "Extract: remove " << g->getTypeStr()
-			     << " (" << i << ")..." << endl;
+			simpMsg << "Extract: remove " << g->getTypeStr()
+			        << " (" << i << ")..." << endl;
 			removeGate(i);
 		}
 	size_t j = 0;
@@ -370,13 +382,10 @@ AigNtk::collectCOI()
 		if(getLatch(i) != 0)
 			latchList[j++] = latchList[i];
 	latchList.resize(j);
-	if(PICount != 0 || latchCount != 0 || andCount != 0)
-		cout << RepeatChar('-', (PICount != 0 && (latchCount != 0 || andCount != 0) ? 72 : 36)) << endl;
-	if(andCount != 0 || latchCount != 0) cout << "Remove ";
-	if(andCount != 0) cout << andCount << " And(s)";
-	if(latchCount != 0) { if(andCount != 0) cout << ", "; cout << latchCount << " Latch(s)"; }
-	if(PICount != 0) { if(andCount != 0 || latchCount != 0) cout << ". "; cout << "Reserve " << PICount << " unused PI(s)"; }
-	if(PICount != 0 || latchCount != 0 || andCount != 0) cout << endl;
+	simpMsg << RepeatChar('-', 72) << endl;
+	cout << "Remove "   << andCount   << " And(s), "
+                        << latchCount << " Latch(s). "
+	     << "Reserve "  << PICount    << " unused PI(s)" << endl;
 	return true;
 }
 
@@ -393,19 +402,18 @@ AigNtk::calReachable()
 		if(AigGate* g = getGate(i); g != 0 &&
 		   !g->isGlobalRef() && g->getGateType() == AIG_AND)
 		{
-			cout << "Sweep: remove And (" << i << ")..." << endl;
+			simpMsg << "Sweep: remove And (" << i << ")..." << endl;
 			removeGate(i); count += 1;
 		}
-	if(count != 0)
-		cout << RepeatChar('-', 36) << endl
-		     << "Remove " << count << " And(s)" << endl;
+	simpMsg << RepeatChar('-', 36) << endl;
+	cout << "Remove " << count << " And(s)" << endl;
 	return true;
 }
 
 bool
-AigNtk::fraig()
+AigNtk::fraig(size_t confLimit)
 {
-	return aigFraiger->funcSimp(this);
+	return aigFraiger->funcSimp(this, confLimit);
 }
 
 bool
@@ -415,9 +423,11 @@ AigNtk::balance()
 }
 
 bool
-AigNtk::rmConstLatch()
+AigNtk::rmConstLatch(bool usePdr, size_t satLimit)
 {
-	return AigConster(this).doSimp();
+	AigConster aigConster(this);
+	return usePdr ? aigConster.doSimpPdr(satLimit)
+	              : aigConster.doSimpMono();
 }
 
 bool
