@@ -88,6 +88,7 @@ AigFraiger::simpNtk(AigNtk* ntkToSimp, bool noFraig, bool doTwoLevel)
 		if(candId == UNDEF_GATEID) continue;
 		const bool inv = candId & 1;
 		const_cast<AigGateID&>(candId) >>= 1;
+		// TODO, support conflict limit
 		if(candId == 0)
 		{
 			solver->convertToCNF(id, 0);

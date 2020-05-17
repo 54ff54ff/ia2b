@@ -64,6 +64,7 @@ public:
 
 	void setConfLimit(size_t) { /* Dummy */ }
 	void setDeciLimit(size_t) { /* Dummy */ }
+	void resetLimit()         { /* Dummy */ }
 	lbool solveLimited() { return solve() ? l_True : l_False; }
 
 protected:

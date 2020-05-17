@@ -134,6 +134,7 @@ public:
 
 	virtual void setConfLimit(size_t) = 0;
 	virtual void setDeciLimit(size_t) = 0;
+	virtual void resetLimit()         = 0;
 	virtual lbool solveLimited()      = 0;
 
 	void addAssump(Var v, bool inv) { assert(isVarValid(v)); addAssump(Lit(v, inv)); }

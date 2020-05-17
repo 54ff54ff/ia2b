@@ -60,6 +60,7 @@ public:
 
 	void setConfLimit(size_t n) { solver->setConfBudget(n); }
 	void setDeciLimit(size_t n) { solver->setDeciBudget(n); }
+	void resetLimit()           { solver->budgetOff(); }
 	lbool solveLimited() { return toLBool(solver->solveLimited(assump)); }
 
 protected:
