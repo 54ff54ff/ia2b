@@ -377,7 +377,7 @@ PdrChecker* getDefaultPdr(AigNtk* ntk)
 	constexpr size_t     recycleNum         = 300;
 	constexpr PdrSimType simType            = PDR_SIM_FORWARD_EVENT;
 	constexpr PdrOrdType ordType            = PDR_ORD_INDEX;
-	constexpr PdrOblType oblType            = PDR_OBL_NORMAL;
+	constexpr PdrOblType oblType            = PDR_OBL_PUSH;
 	constexpr PdrDeqType deqType            = PDR_DEQ_STACK;
 	constexpr PdrPrpType prpType            = PDR_PRP_NORMAL;
 	constexpr PdrGenType genType            = PDR_GEN_NORMAL;
@@ -387,7 +387,7 @@ PdrChecker* getDefaultPdr(AigNtk* ntk)
 	constexpr bool       checkSelf          = false;
 	constexpr bool       assertFrame        = false;
 	constexpr bool       recycleByQuery     = true;
-	constexpr bool       lazyProp           = false;
+	constexpr bool       lazyProp           = true;
 	constexpr bool       sortByBadDepth     = false;
 
 	return (new PdrChecker(ntk, fakeOutputIdx, noTrace, noTimeout, noMaxFrame, recycleNum, noStat,
@@ -591,7 +591,7 @@ PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t
 			case PDR_OBL_STIMU_DEPTH : sfcMsg << "Consider the proof obligations by their bad depth"; break;
 			case PDR_OBL_STIMU_NONE  : assert(false);
 		}
-		sfcMsg << ", treeSizeLimit = " << oblStimuNum1 << ", satLimit = ";
+		sfcMsg << ", oblThreshold = " << oblStimuNum1 << ", satLimit = ";
 		if(oblStimuNum2 == 0) sfcMsg << "Infinity"; else sfcMsg << oblStimuNum2 << endl;
 		sfcMsg << "             ";
 		switch(oblShareT)
@@ -720,8 +720,8 @@ PdrChecker::getOblStimulator(PdrOblStimuType oblStimuT, PdrShareType shareT, boo
 	}
 }
 
-size_t
-PdrChecker::mergeInf(const vector<PdrCube>& indSet, bool pushAtBack)
+void
+PdrChecker::mergeInf(const vector<PdrCube>& indSet, bool pushAtBack, StatPtr<PdrStimuStat>& stimuStat)
 {
 	vector<PdrCube>  tmp = indSet;
 	vector<PdrCube>& inf = frame.back();
@@ -738,6 +738,8 @@ PdrChecker::mergeInf(const vector<PdrCube>& indSet, bool pushAtBack)
 
 	if(isVerboseON(PDR_VERBOSE_STIMU))
 		cout << ", #original clause = " << tmp.size() << ", #added clause = " << s << endl;
+	if(stimuStat.isON())
+		stimuStat->incInfClsNum(s);
 	tmp.resize(s);
 
 	for(const PdrCube& c: tmp)
@@ -757,7 +759,51 @@ PdrChecker::mergeInf(const vector<PdrCube>& indSet, bool pushAtBack)
 			tmp.push_back(move(c));
 		inf.swap(tmp);
 	}
-	return s;
+}
+
+void
+PdrChecker::mergeFrames(const vector<vector<PdrCube>>& mergedFrame, bool pushAtBack, StatPtr<PdrStimuStat>& stimuStat)
+{
+	assert(mergedFrame.size() >= 2);
+	assert(mergedFrame.size() <= frame.size());
+	assert(mergedFrame[0].size() == 0);
+
+	vector<vector<PdrCube>> tmpMerged = mergedFrame;
+	while(tmpMerged.size() < frame.size())
+		{ tmpMerged.push_back(move(tmpMerged.back())); tmpMerged[tmpMerged.size()-2].clear(); }
+	const size_t infIdx = frame.size() - 1;
+	for(size_t f = 1; f < infIdx; ++f)
+	{
+		vector<PdrCube>  tmp = mergedFrame[f];
+		vector<PdrCube>& cur = frame[f];
+		size_t s = 0;
+		for(size_t i = 0, n = tmp.size(); i < n; ++i)
+			if(!checkIsSubsumed(tmp[i], f, infIdx))
+			{
+				checkSubsumeOthers(tmp[i], 1, f);
+				if(s < i)
+					tmp[s++] = move(tmp[i]);
+				else { assert(s == i); s += 1; }
+			}
+
+		if(isVerboseON(PDR_VERBOSE_STIMU))
+			cout << "For frame " << f << ": #original clause = " << tmp.size() << ", #added clause = " << s << endl;
+		tmp.resize(s);
+
+		for(const PdrCube& c: tmp)
+			addBlockedCubeFrame(f, c);
+
+		if(pushAtBack)
+			for(PdrCube& c: tmp)
+				cur.push_back(move(c));
+		else
+		{
+			for(PdrCube& c: cur)
+				tmp.push_back(move(c));
+			cur.swap(tmp);
+		}
+	}
+	mergeInf(mergedFrame.back(), pushAtBack, stimuStat);
 }
 
 PdrChecker*
@@ -934,8 +980,6 @@ PdrChecker::recBlockCube(const PdrTCube& notPTCube)
 		if(badDequeVec[checkFrame].empty()) checkFrame += 1;
 	};
 	oblTreeSize = badDequeVec[curFrame].size();
-//	if(oblStimulator != 0)
-//		oblStimulator->reset(oblTreeSize);
 	while(checkFrame < maxFrame)
 	{
 		assert(!badDequeVec[checkFrame].empty());
@@ -976,7 +1020,6 @@ PdrChecker::recBlockCube(const PdrTCube& notPTCube)
 				oblTreeSize += 1;
 				checkThenPushObl(--checkFrame, newTCube.getCube());
 				if(oblStimulator != 0)
-//					oblStimulator->checkCommonPart(badCube),
 					oblStimulator->stimulate();
 			}
 			checkRecycle();
@@ -1736,6 +1779,16 @@ void
 PdrChecker::terSimBackwardInternal(const vector<AigGateID>&)const
 {
 	//TODO
+}
+
+void
+PdrChecker::satGenBySAT(const vector<AigGateID>& target)const
+{
+	// TODO
+	const Var act = solver->newVar();
+
+	solver->clearAssump();
+	solver->addAssump(act, false);
 }
 
 void

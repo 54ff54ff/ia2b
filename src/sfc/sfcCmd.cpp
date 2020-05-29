@@ -356,7 +356,7 @@ ItpCheckCmd::getHelpStr()const
 	                 [-STat ("atsgprcx")] [-Verbose ("aogpbtcimfx")]
 	                 [<<-LOCALInf | -LOCALAll | -LOCALMix> (unsigned backtrackNum matchNum) |
 	                    -HALF                              (unsigned observeNum matchNum)   |
-	                   <-OBLAll | -OBLDepth>               (unsigned treeSizeLimit)>
+	                   <-OBLAll | -OBLDepth>               (unsigned oblThreshold)>
 	                  (unsigned satLimit) [-SHAREInf | -SHAREAll]]
                      [-CHeck]
 --------------------------------------------------------------------------
@@ -842,7 +842,7 @@ PdrCheckCmd::exec(char* options)const
 			if(!myStrToUInt(tokens[i], oblStimuNum2))
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
 			if(oblStimuNum1 == 0)
-				{ cerr << "[Error] treeSizeLimit cannot be 0!" << endl; return CMD_EXEC_ERROR_EXT; }
+				{ cerr << "[Error] oblThreshold cannot be 0!" << endl; return CMD_EXEC_ERROR_EXT; }
 			postt = PDR_OBL_STIMU_ALL;
 		}
 		else if(optMatch<35>(tokens[i]))
@@ -859,7 +859,7 @@ PdrCheckCmd::exec(char* options)const
 			if(!myStrToUInt(tokens[i], oblStimuNum2))
 				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
 			if(oblStimuNum1 == 0)
-				{ cerr << "[Error] treeSizeLimit cannot be 0!" << endl; return CMD_EXEC_ERROR_EXT; }
+				{ cerr << "[Error] oblThreshold cannot be 0!" << endl; return CMD_EXEC_ERROR_EXT; }
 			postt = PDR_OBL_STIMU_DEPTH;
 		}
 		else return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
@@ -892,7 +892,7 @@ PdrCheckCmd::getUsageStr()const
 	       "[-STat (\"atsgprcx\")] [-Verbose (\"aogpbtcimfx\")]\n"
 	       "[<<-LOCALInf | -LOCALAll | -LOCALMix> (unsigned backtrackNum matchNum) |\n"
 	       "   -HALF                              (unsigned observeNum matchNum)   |\n"
-	       "  <-OBLAll | -OBLDepth>               (unsigned treeSizeLimit)>\n"
+	       "  <-OBLAll | -OBLDepth>               (unsigned oblThreshold)>\n"
 	       " (unsigned satLimit) [-SHAREInf | -SHAREAll]]\n"
 	       "[-CHeck]\n";
 }

@@ -63,7 +63,7 @@ protected:
 	unsigned                  oldColNo;
 	unsigned                  colNo;
 	string                    buffer;
-	string                    errMsg;
+	string                    errStr;
 	unsigned                  errInt;
 	AigGate*                  errGate;
 	AigNtk*                   targetNtk;
@@ -105,7 +105,7 @@ protected:
 	bool checkDef(bool, const string&);
 	bool readOneLine();
 	bool isEOF()const { return inFile.eof(); }
-	bool checkEOF() { return isEOF() ? (errMsg = "a newline character", parseError(UNEXPECTED_EOF)) : true; }
+	bool checkEOF() { return isEOF() ? (errStr = "a newline character", parseError(UNEXPECTED_EOF)) : true; }
 	bool getUInt(bool, unsigned&, const string&);
 	bool getErrorToken();
 	char getCurChar()const { return buffer[colNo]; }
@@ -121,7 +121,7 @@ protected:
 	void setOldColNo() { oldColNo = colNo; }
 	void incLineNo() { lineNo += 1; }
 	void closeFile() { inFile.close(); }
-	void setErrMsg() { errMsg = buffer.substr(oldColNo, colNo - oldColNo); setColNo(); }
+	void setErrStr() { errStr = buffer.substr(oldColNo, colNo - oldColNo); setColNo(); }
 };
 
 class AigAsciiParser : public AigParser

@@ -18,7 +18,7 @@ AigParser::parseError(AigParseError err)const
 	switch(err)
 	{
 		case CANNOT_OPEN_FILE:
-			cerr << "[Error] Cannot open AIGER file \"" << errMsg << "\"!" << endl;
+			cerr << "[Error] Cannot open AIGER file \"" << errStr << "\"!" << endl;
 			break;
 
 		case MISSING_SPACE:
@@ -33,7 +33,7 @@ AigParser::parseError(AigParseError err)const
 
 		case MISSING_DEFINITION:
 			cerr << "[Error] At line " << lineNo << ", column " << colNo + 1
-			     << ": Expect " << errMsg << " here!" << endl;
+			     << ": Expect " << errStr << " here!" << endl;
 			break;
 
 		case ILLEGAL_CHARACTER:
@@ -44,18 +44,18 @@ AigParser::parseError(AigParseError err)const
 
 		case ILLEGAL_NUMBER:
 			cerr << "[Error] At line " << lineNo << ", column " << colNo + 1
-			     << ": Illegal unsigned number (" << errMsg << ")!" << endl;
+			     << ": Illegal unsigned number (" << errStr << ")!" << endl;
 			break;
 
 		case NUMBER_OVERFLOW:
 			cerr << "[Error] At line " << lineNo << ", column " << colNo + 1
-			     << ": The number " << errMsg << " is too big. Currently only "
+			     << ": The number " << errStr << " is too big. Currently only "
 			     << sizeof(unsigned) * 8 << " bits unisgned number is support!" << endl;
 			break;
 
 		case ILLEGAL_IDENTIFIER:
 			cerr << "[Error] At line " << lineNo << ", column " << colNo + 1
-			     << ": Illegal identifier \"" << errMsg << "\". It should be \"" << getIdentifier() << "\"!" << endl;
+			     << ": Illegal identifier \"" << errStr << "\". It should be \"" << getIdentifier() << "\"!" << endl;
 			break;
 
 		case UNKNOWN_ACCIDENT:
@@ -65,7 +65,7 @@ AigParser::parseError(AigParseError err)const
 
 		case UNEXPECTED_EOF:
 			cerr << "[Error] At line " << lineNo << ", column " << colNo + 1
-			     << ": Unexpected EOF. Expect " << errMsg << " here!" << endl;
+			     << ": Unexpected EOF. Expect " << errStr << " here!" << endl;
 			break;
 
 		case MISSING_NEWLINE:
@@ -75,17 +75,17 @@ AigParser::parseError(AigParseError err)const
 
 		case NUMBER_TOO_BIG:
 			cerr << "[Error] At line " << lineNo << ",column " << colNo + 1
-			     << ": " << errMsg << " is too big (" << errInt << ")!" << endl;
+			     << ": " << errStr << " is too big (" << errInt << ")!" << endl;
 			break;
 
 		case NUMBER_TOO_SMALL:
 			cerr << "[Error] At line " << lineNo << ", column " << colNo + 1
-			     << ": " << errMsg << " is too small (" << errInt << ")!" << endl;
+			     << ": " << errStr << " is too small (" << errInt << ")!" << endl;
 			break;
 
 		case MAX_LIT_ID:
 			cerr << "[Error] At line " << lineNo << ", column " << colNo + 1
-			     << ": The literal of " << errMsg << " (" << errInt << ") exceeds the maximum valid ID!" << endl;
+			     << ": The literal of " << errStr << " (" << errInt << ") exceeds the maximum valid ID!" << endl;
 			break;
 
 		case CANNOT_BE_INVERTED:
@@ -95,7 +95,7 @@ AigParser::parseError(AigParseError err)const
 
 		case REDEF_CONST:
 			cerr << "[Error] At line " << lineNo << ", colunm " << colNo + 1
-			     << ": The constant gate cannot be redefined as \"" << errMsg << "\"!" << endl;
+			     << ": The constant gate cannot be redefined as \"" << errStr << "\"!" << endl;
 			break;
 
 		case REDEF_GATE:
@@ -106,7 +106,7 @@ AigParser::parseError(AigParseError err)const
 
 		case UNDEFINED_FANIN:
 			cerr << "[Error] For the gate with ID " << errGate->getGateID() << ", its "
-			     << errMsg << "fanin with ID " << errInt << " is not defined!" << endl;
+			     << errStr << "fanin with ID " << errInt << " is not defined!" << endl;
 			break;
 
 		case ILLEGAL_SYMBOL_TYPE:
@@ -117,11 +117,11 @@ AigParser::parseError(AigParseError err)const
 
 		case REDEF_SYMBOL_NAME:
 			cerr << "[Error] At line " << lineNo
-			     << ": The name of " << errMsg << " " << errInt << " is redefined!" << endl;
+			     << ": The name of " << errStr << " " << errInt << " is redefined!" << endl;
 			break;
 
 		case UNDEFINED_PROP:
-			cerr << "[Error] For " << errMsg << ", the gate of literal "
+			cerr << "[Error] For " << errStr << ", the gate of literal "
 			     << errInt << " is not defined!" << endl;
 			break;
 
@@ -162,7 +162,7 @@ AigParser::initParsing(const char* fileName)
 	targetNtk = 0;
 	inFile.open(fileName);
 	if(!inFile.is_open())
-		{ errMsg = fileName; return parseError(CANNOT_OPEN_FILE); }
+		{ errStr = fileName; return parseError(CANNOT_OPEN_FILE); }
 	lineNo = 0;
 	targetNtk = new AigNtk(fileName);
 	return true;
@@ -334,7 +334,7 @@ AigParser::parseSymbol()
 		if(!readOneLine())
 			return false;
 		if(isEndOfLine())
-			return isEOF() ? true : (errMsg = "symbol type", parseError(MISSING_DEFINITION));
+			return isEOF() ? true : (errStr = "symbol type", parseError(MISSING_DEFINITION));
 		char typeChar = getCurChar();
 		incColNo();
 		ParsePort type;
@@ -360,10 +360,10 @@ AigParser::parseSymbol()
 		if(!getUInt(false, portID, "the index of " + portStr[type]))
 			return false;
 		if(portID >= num[type])
-			{ errMsg = "The index of " + portStr[type]; errInt = portID; setColNo();
+			{ errStr = "The index of " + portStr[type]; errInt = portID; setColNo();
 			  return parseError(NUMBER_TOO_BIG); }
 		if(nameList[type][portID])
-			{ errMsg = portStr[type]; errInt = portID; return parseError(REDEF_SYMBOL_NAME); }
+			{ errStr = portStr[type]; errInt = portID; return parseError(REDEF_SYMBOL_NAME); }
 		nameList[type][portID] = true;
 		if(!checkDef(true, "the symbol name of " + portStr[type]))
 			return false;
@@ -419,7 +419,7 @@ AigParser::checkID(bool leadSpace, unsigned& litID, const string& err)
 	if(!getUInt(leadSpace, litID, "the literal of " + err))
 		return false;
 	if(litID / 2 > num[MAX])
-		{ errInt = litID; errMsg = err; setColNo(); return parseError(MAX_LIT_ID); }
+		{ errInt = litID; errStr = err; setColNo(); return parseError(MAX_LIT_ID); }
 	return true;
 }
 
@@ -429,9 +429,9 @@ AigParser::checkGate(unsigned& litID, const string& err)
 	if(!checkID(false, litID, err))
 		return false;
 	if(litID % 2 != 0)
-		{ errMsg = err; errInt = litID; setColNo(); return parseError(CANNOT_BE_INVERTED); }
+		{ errStr = err; errInt = litID; setColNo(); return parseError(CANNOT_BE_INVERTED); }
 	if(litID < 2)
-		{ errMsg = err; setColNo(); return parseError(REDEF_CONST); }
+		{ errStr = err; setColNo(); return parseError(REDEF_CONST); }
 	AigGate* gate = targetNtk->getGate(litID/2);
 	if(gate != 0)
 		{ errInt = litID; setColNo(); errGate = gate; return parseError(REDEF_GATE); }
@@ -449,7 +449,7 @@ AigParser::checkDef(bool leadSpace, const string& definition)
 		incColNo();
 	}
 	if(isEndOfLine() || isSpace())
-		{ errMsg = definition; return parseError(MISSING_DEFINITION); }
+		{ errStr = definition; return parseError(MISSING_DEFINITION); }
 	return true;
 }
 
@@ -487,7 +487,7 @@ AigParser::getUInt(bool leadSpace, unsigned& num, const string& err)
 		else
 			return getErrorToken() ? parseError(ILLEGAL_NUMBER) : false;
 	if(overflow)
-		{ setErrMsg(); return parseError(NUMBER_OVERFLOW); }
+		{ setErrStr(); return parseError(NUMBER_OVERFLOW); }
 	if(warning)
 		cerr << "[Warning] At line " << lineNo << ", column " << oldColNo + 1
 		     << ": Leading zero(s) on a number should be avoided!" << endl;
@@ -503,7 +503,7 @@ AigParser::getErrorToken()
 	for(; !isEndOfLine() && !isSpace(); incColNo())
 		if(!isPrint())
 			return parseError(ILLEGAL_CHARACTER);
-	setErrMsg();
+	setErrStr();
 	return true;
 }
 
@@ -596,16 +596,16 @@ AigAsciiParser::checkFanIn()
 			{
 				case 1:
 					if(!g->getFanIn0().setRealValueCheck(targetNtk))
-						{ errGate = g; errMsg = ""; errInt = g->getFanIn0().getValue()/2;
+						{ errGate = g; errStr = ""; errInt = g->getFanIn0().getValue()/2;
 						  return parseError(UNDEFINED_FANIN); }
 					break;
 
 				case 2:
 					if(!g->getFanIn0().setRealValueCheck(targetNtk))
-						{ errGate = g; errMsg = "first ";  errInt = g->getFanIn0().getValue()/2;
+						{ errGate = g; errStr = "first ";  errInt = g->getFanIn0().getValue()/2;
 						  return parseError(UNDEFINED_FANIN); }
 					if(!g->getFanIn1().setRealValueCheck(targetNtk))
-						{ errGate = g; errMsg = "second "; errInt = g->getFanIn1().getValue()/2;
+						{ errGate = g; errStr = "second "; errInt = g->getFanIn1().getValue()/2;
 						  return parseError(UNDEFINED_FANIN); }
 					break;
 
@@ -620,20 +620,20 @@ AigAsciiParser::checkProp()
 {
 	for(size_t i = 0, B = badLits.size(); i < B; ++i)
 		if(targetNtk->getGate(badLits[i]/2) == 0)
-			{ errMsg = "bad " + to_string(i); errInt = badLits[i];
+			{ errStr = "bad " + to_string(i); errInt = badLits[i];
 			  return parseError(UNDEFINED_PROP); }
 	for(size_t i = 0, C = constraintLits.size(); i < C; ++i)
 		if(targetNtk->getGate(constraintLits[i]/2) == 0)
-			{ errMsg = "constraint " + to_string(i); errInt = constraintLits[i];
+			{ errStr = "constraint " + to_string(i); errInt = constraintLits[i];
 			  return parseError(UNDEFINED_PROP); }
 	for(size_t i = 0, J = justiceLits.size(); i < J; ++i)
 		for(size_t j = 0, JSub = justiceLits[i].size(); j < JSub; ++j)
 			if(targetNtk->getGate(justiceLits[i][j]/2) == 0)
-				{ errMsg = "justice " + to_string(i) + "-" + to_string(j);
+				{ errStr = "justice " + to_string(i) + "-" + to_string(j);
 				  errInt = justiceLits[i][j]; return parseError(UNDEFINED_PROP); }
 	for(size_t i = 0, F = fairnessLits.size(); i < F; ++i)
 		if(targetNtk->getGate(fairnessLits[i]/2) == 0)
-			{ errMsg = "fairness " + to_string(i); errInt = fairnessLits[i];
+			{ errStr = "fairness " + to_string(i); errInt = fairnessLits[i];
 			  return parseError(UNDEFINED_PROP); }
 	return true;
 }
@@ -642,7 +642,7 @@ bool
 AigAsciiParser::checkMaxID()
 {
 	if(num[MAX] < num[PI] + num[LATCH] + num[AND])
-		{ colNo = strlen(getIdentifier())+1; errMsg = "The number of max variable ID"; errInt = num[MAX];
+		{ colNo = strlen(getIdentifier())+1; errStr = "The number of max variable ID"; errInt = num[MAX];
 		  return parseError(NUMBER_TOO_SMALL); }
 	return true;
 }
@@ -700,14 +700,14 @@ AigBinaryParser::parseAnd()
 		if(!decode(delta))
 			return false;
 		if(delta > lhs)
-			{ errMsg = "The delta"; errInt = delta; setColNo();
+			{ errStr = "The delta"; errInt = delta; setColNo();
 			  return parseError(NUMBER_TOO_BIG); }
 		unsigned rhs0 = lhs - delta;
 		gate->setFanIn0(targetNtk->getGate(rhs0/2), rhs0%2);
 		if(!decode(delta))
 			return false;
 		if(delta > rhs0)
-			{ errMsg = "The delta"; errInt = delta; setColNo();
+			{ errStr = "The delta"; errInt = delta; setColNo();
 			  return parseError(NUMBER_TOO_BIG); }
 		unsigned rhs1 = rhs0 - delta;
 		gate->setFanIn1(targetNtk->getGate(rhs1/2), rhs1%2);
@@ -729,10 +729,10 @@ bool
 AigBinaryParser::checkMaxID()
 {
 	if(num[MAX] < num[PI] + num[LATCH] + num[AND])
-		{ colNo = strlen(getIdentifier())+1; errMsg = "The number of max variable ID"; errInt = num[MAX];
+		{ colNo = strlen(getIdentifier())+1; errStr = "The number of max variable ID"; errInt = num[MAX];
 		  return parseError(NUMBER_TOO_SMALL); }
 	if(num[MAX] > num[PI] + num[LATCH] + num[AND])
-		{ colNo = strlen(getIdentifier())+1; errMsg = "The number of max variable ID"; errInt = num[MAX];
+		{ colNo = strlen(getIdentifier())+1; errStr = "The number of max variable ID"; errInt = num[MAX];
 		  return parseError(NUMBER_TOO_BIG); }
 	return true;
 }
@@ -752,7 +752,7 @@ AigBinaryParser::decode(unsigned& num)
 	do
 	{
 		if(isEOF())
-			{ errMsg = "the binary encoding of AND gate"; return parseError(UNEXPECTED_EOF); }
+			{ errStr = "the binary encoding of AND gate"; return parseError(UNEXPECTED_EOF); }
 		if(inFile.get(c).fail())
 			return parseError(UNKNOWN_ACCIDENT);
 		incColNo();

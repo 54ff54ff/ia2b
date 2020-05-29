@@ -407,7 +407,8 @@ protected:
 			class PdrOblStimulatorAll;
 			class PdrOblStimulatorDepth;
 
-	size_t mergeInf(const vector<PdrCube>&, bool);
+	void mergeInf(const vector<PdrCube>&, bool, StatPtr<PdrStimuStat>&);
+	void mergeFrames(const vector<vector<PdrCube>>&, bool, StatPtr<PdrStimuStat>&);
 	PdrChecker* cloneChecker()const;
 	const vector<PdrCube>& getInfFrame()const { return frame.back(); }
 
@@ -450,13 +451,14 @@ protected:
 	void    terSimForwardEvent    (const vector<AigGateID>&)const;
 	void    terSimBackwardNormal  (const vector<AigGateID>&)const;
 	void    terSimBackwardInternal(const vector<AigGateID>&)const;
+	void satGenBySAT(const vector<AigGateID>&)const;
 	void genSimCand(const vector<AigGateID>&)const;
 	void sortGenCubeByAct()const;
 
-	Var addCurNotState(const PdrCube&)const;
+	Var addCurNotState (const PdrCube&)const;
+	void addState    (const PdrCube&, size_t)const;
 	void addCurState (const PdrCube& c)const { addState(c, 0); }
 	void addNextState(const PdrCube& c)const { addState(c, 1); }
-	void addState(const PdrCube&, size_t)const;
 	void activateFrame(size_t)const;
 	PdrCube unsatGen(const PdrCube&)const;
 	size_t findLowestActPlus1(size_t)const;
@@ -704,33 +706,28 @@ protected:
 class PdrChecker::PdrOblStimulator : public PdrStimulator
 {
 public:
-	PdrOblStimulator(PdrChecker* c, PdrShareType shareT, bool statON, size_t treeSizeL, size_t satL)
+	PdrOblStimulator(PdrChecker* c, PdrShareType shareT, bool statON, size_t oblTH, size_t satL)
 	: PdrStimulator (c, shareT, satL, statON)
-	, treeSizeLimit (treeSizeL)
-	, curTreeSize   (0) { assert(treeSizeL > 0); }
+	, oblThreshold  (oblTH) { assert(oblTH > 0); }
 	virtual ~PdrOblStimulator() {}
 
-	void reset(size_t initNum) { curTreeSize = initNum; resetInt(); }
-	void stimulate() { if(++curTreeSize >= treeSizeLimit) { stimulateInt(); reset(0); } }
-
-	virtual void resetInt() = 0;
-	virtual void stimulateInt() = 0;
+	virtual void stimulate() = 0;
 	virtual void checkCommonPart(const PdrCube&) = 0;
 	virtual void printCommon()const = 0;
 
 protected:
-	size_t  treeSizeLimit;
-	size_t  curTreeSize;
+	size_t  oblThreshold;
 };
 
 class PdrChecker::PdrOblStimulatorAll : public PdrOblStimulator
 {
 public:
-	PdrOblStimulatorAll(PdrChecker* c, PdrShareType shareT, bool statON, size_t tsl, size_t sl)
-	: PdrOblStimulator(c, shareT, statON, tsl, sl), numObl(0) {}
+	PdrOblStimulatorAll(PdrChecker* c, PdrShareType shareT, bool statON, size_t oth, size_t sl)
+	: PdrOblStimulator(c, shareT, statON, oth, sl), numObl(0) {}
 
-	void resetInt();
-	void stimulateInt();
+	void reset();
+
+	void stimulate();
 	void checkCommonPart(const PdrCube&);
 	void printCommon()const;
 
@@ -742,17 +739,19 @@ protected:
 class PdrChecker::PdrOblStimulatorDepth : public PdrOblStimulator
 {
 public:
-	PdrOblStimulatorDepth(PdrChecker* c, PdrShareType shareT, bool statON, size_t tsl, size_t sl)
-	: PdrOblStimulator(c, shareT, statON, tsl, sl) {}
+	PdrOblStimulatorDepth(PdrChecker* c, PdrShareType shareT, bool statON, size_t oth, size_t sl)
+	: PdrOblStimulator(c, shareT, statON, oth, sl) {}
 
-	void resetInt();
-	void stimulateInt();
+	void reset(size_t);
+
+	void stimulate();
 	void checkCommonPart(const PdrCube&);
 	void printCommon()const;
 
 protected:
 	vector<size_t>              numObl;
 	vector<vector<AigGateLit>>  commonPart;
+	vector<size_t>              candDepth;
 };
 
 #endif

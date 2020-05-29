@@ -214,10 +214,7 @@ PdrChecker::PdrStimulator::solveCand(const PdrCube& candCube, unsigned mergeType
 		else
 		{
 			if(mergeType & (unsigned(1) << r))
-			{
-				size_t numNewCls = checker->mergeInf(stimuChecker->getCurIndSet(false), true);
-				incInfClsNum(numNewCls);
-			}
+				checker->mergeInf(stimuChecker->getCurIndSet(false), true, stimuStat);
 			if(r != 0) addToFailed(candCube);
 		}
 		delete stimuChecker;
@@ -339,24 +336,26 @@ PdrChecker::PdrClsStimulatorHalf::stimulateAtEndOfFrame()
 }
 
 void
-PdrChecker::PdrOblStimulatorAll::resetInt()
+PdrChecker::PdrOblStimulatorAll::reset()
 {
 	numObl = 0;
 	commonPart.clear();
 }
 
 void
-PdrChecker::PdrOblStimulatorAll::stimulateInt()
+PdrChecker::PdrOblStimulatorAll::stimulate()
 {
-	if(!commonPart.empty())
+	if(numObl >= oblThreshold)
 	{
-		PdrCube candidate(commonPart);
-		if(notFailed(candidate)) {
-			if(checker->isInitial(candidate)) addToFailed(candidate);
-			else                              solveCand(candidate, 0b111); }
+		if(!commonPart.empty())
+		{
+			PdrCube candidate(commonPart);
+			if(notFailed(candidate)) {
+				if(checker->isInitial(candidate)) addToFailed(candidate);
+				else                              solveCand(candidate, 0b111); }
+		}
+		reset();
 	}
-	else if(checker->isVerboseON(PDR_VERBOSE_STIMU))
-		cout << "No common part of proof obligation!" << endl;
 }
 
 void
@@ -404,36 +403,35 @@ PdrChecker::PdrOblStimulatorAll::printCommon()const
 }
 
 void
-PdrChecker::PdrOblStimulatorDepth::resetInt()
+PdrChecker::PdrOblStimulatorDepth::reset(size_t badDepth)
 {
-	for(size_t& n: numObl)
-		n = 0;
-	for(vector<AigGateLit>& cp: commonPart)
-		cp.clear();
+	numObl[badDepth] = 0;
+	commonPart[badDepth].clear();
 }
 
 void
-PdrChecker::PdrOblStimulatorDepth::stimulateInt()
+PdrChecker::PdrOblStimulatorDepth::stimulate()
 {
-	size_t b = commonPart.size() - 1;
-	for(; b != size_t(-1) && commonPart.empty(); --b);
-	for(; b != size_t(-1); --b)
-		if(!commonPart[b].empty())
+	for(size_t badDepth: candDepth)
+	{
+		assert(numObl[badDepth] >= oblThreshold);
+		if(!commonPart[badDepth].empty())
 		{
-			PdrCube candidate(commonPart[b]);
+			PdrCube candidate(commonPart[badDepth]);
 			if(notFailed(candidate)) {
 				if(checker->isInitial(candidate)) addToFailed(candidate);
 				else                              solveCand(candidate, 0b111); }
 		}
-		else if(checker->isVerboseON(PDR_VERBOSE_STIMU))
-			cout << "No common part of proof obligation for bad depth " << b << "!" << endl;
+		reset(badDepth);
+	}
+	candDepth.clear();
 }
 
 void
 PdrChecker::PdrOblStimulatorDepth::checkCommonPart(const PdrCube& c)
 {
 	assert(numObl.size() == commonPart.size());
-	const unsigned badDepth = c.getBadDepth();
+	const size_t badDepth = c.getBadDepth();
 	if(badDepth >= commonPart.size())
 	{
 		assert(badDepth == commonPart.size());
@@ -461,6 +459,8 @@ PdrChecker::PdrOblStimulatorDepth::checkCommonPart(const PdrCube& c)
 		else
 		{}
 	}
+	if(numObl[badDepth] == oblThreshold)
+		candDepth.push_back(badDepth);
 }
 
 void

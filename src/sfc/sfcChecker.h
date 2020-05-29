@@ -83,12 +83,12 @@ protected:
 class CheckerErr
 {
 public:
-	CheckerErr(const char* err): errMsg(err) {}
+	CheckerErr(const char* err): errStr(err) {}
 
-	const string& getErrMsg()const { return errMsg; }
+	const string& getErrStr()const { return errStr; }
 
 private:
-	string  errMsg;
+	string  errStr;
 };
 
 class CheckerBreak {};
@@ -108,7 +108,7 @@ SafetyChecker* getChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, siz
 		return (new CombChecker(ntkToCheck, outputIdx, _trace, timeout));
 	}
 	try { return (new Checker(ntkToCheck, outputIdx, _trace, timeout, forward<Param>(param)...)); }
-	catch(const CheckerErr& ce) { cerr << ce.getErrMsg() << endl; return 0; }
+	catch(const CheckerErr& ce) { cerr << ce.getErrStr() << endl; return 0; }
 }
 
 }

@@ -55,6 +55,8 @@ public:
 	WrapStr& operator=(const WrapStr& ws) { setStrInt(ws.str, true); return *this; }
 	WrapStr& operator=(WrapStr&& ws) { setStrInt(ws.str, false); ws.str = 0; return *this; }
 
+	bool operator==(const WrapStr& ws)const { return strcmp(str, ws.str) == 0; }
+
 	void clear() { clearInt(); str = 0; }
 	void setStr(const char* s, bool copy) { clearInt(); setStrInt(s, copy); }
 	operator const char*()const { return str; }
