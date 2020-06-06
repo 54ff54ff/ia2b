@@ -93,6 +93,7 @@ PdrChecker::PdrStimulator::solveCand(const PdrCube& candCube, unsigned mergeType
 				{ assert(!c.getMarkB()); c.setMarkB(true); }
 
 		// Store the parameter
+		// TODO, modify here if adding new data member in pdrChecker
 		size_t curF = checker->curFrame;
 		checker->curFrame = 1;
 		size_t maxF = checker->maxFrame;
@@ -229,14 +230,9 @@ PdrChecker::PdrStimulator::solveCand(const PdrCube& candCube, unsigned mergeType
 void
 PdrChecker::PdrClsStimulatorLocalInfAll::stimulateWithOneCube(const PdrTCube& tc)
 {
-/*
-size_t b = backtrackNum, m = matchNum;
-if(tc.getFrame() == FRAME_INF)
-	backtrackNum = 20, matchNum = 1;
-else
-	backtrackNum = 10, matchNum = 2;
-*/
-
+	if(golden) {
+		if(tc.getFrame() == FRAME_INF) backtrackNum = 20, matchNum = 1;
+		else                           backtrackNum = 10, matchNum = 2; }
 	if(tc.getFrame() != FRAME_INF && onlyInf)
 		return;
 	const PdrCube& blockCube = tc.getCube();
@@ -261,8 +257,6 @@ else
 	for(const auto&[candCube, candNum]: candidate)
 		if(candNum >= matchNum)
 			solveCand(candCube, 0b111);
-
-//backtrackNum = b, matchNum = m;
 }
 
 void

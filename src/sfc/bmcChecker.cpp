@@ -93,7 +93,7 @@ IndChecker::check()
 	{
 		cout << " base" << flush;
 		solver->clearAssump();
-		solver->addAssump(init.getGateID(), 0, init.isInv());
+		solver->addAssump(init, 0);
 		solver->addAssump(property, i, false);
 		if(solver->solve())
 		{
@@ -211,7 +211,7 @@ ItpChecker::check()
 	AigGateV init = buildInit();
 	solver->convertToCNF(init.getGateID(), 0);
 	solver->convertToCNF(property, 0);
-	solver->addAssump(init.getGateID(), 0, init.isInv());
+	solver->addAssump(init, 0);
 	solver->addAssump(property, 0, false);
 	cout << "Timeframe = 0" << flush;
 	if(solver->solve())
@@ -269,7 +269,7 @@ ItpChecker::check()
 		{
 			cout << "\rTimeframe = " << i << ", Iteration = " << j << flush;
 			solver->clearAssump();
-			solver->addAssump(curReach.getGateID(), 0, curReach.isInv());
+			solver->addAssump(curReach, 0);
 			solver->addAssump(target, false);
 			if(solver->solve())
 			{
@@ -285,8 +285,8 @@ ItpChecker::check()
 			AigGateV overApprox = solver->buildItp();
 			eqChecker->convertToCNF(curReachAll.getGateID(), 0);
 			eqChecker->convertToCNF(overApprox.getGateID(), 0);
-			eqChecker->addAssump(curReachAll.getGateID(), 0, !curReachAll.isInv());
-			eqChecker->addAssump(overApprox.getGateID(), 0, overApprox.isInv());
+			eqChecker->addAssump(~curReachAll, 0);
+			eqChecker->addAssump(overApprox, 0);
 			bool diff = eqChecker->solve();
 			eqChecker->clearAssump();
 			cout << CleanIntOnTerminal(j);

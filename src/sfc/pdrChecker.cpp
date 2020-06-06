@@ -552,23 +552,26 @@ PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t
 		sfcMsg << "Stimulate  : ";
 		switch(clsStimuT)
 		{
-			case PDR_CLS_STIMU_LOCAL_INF : sfcMsg << "Observe only part of the clauses, focus on inifinte frame" << endl
-			                                      << "             "
-			                                      << "backtrackNum = " << clsStimuNum1
-			                                      << ", matchNum = "   << clsStimuNum2; break;
-			case PDR_CLS_STIMU_LOCAL_ALL : sfcMsg << "Observe only part of the clauses, focus on all frames" << endl
-			                                      << "             "
-			                                      << "backtrackNum = " << clsStimuNum1
-			                                      << ", matchNum = "   << clsStimuNum2; break;
-			case PDR_CLS_STIMU_LOCAL_MIX : sfcMsg << "Observe only part of the clauses, focus on mixed frames" << endl
-			                                      << "             "
-			                                      << "backtrackNum = " << clsStimuNum1
-			                                      << ", matchNum = "   << clsStimuNum2; break;
-			case PDR_CLS_STIMU_HALF      : sfcMsg << "Observe neighboring region of each clause, focus on infinite frame" << endl
-			                                      << "             "
-			                                      << "observeNum = "   << clsStimuNum1
-			                                      << ", matchNum = "   << clsStimuNum2; break;
-			case PDR_CLS_STIMU_NONE      : assert(false);
+			case PDR_CLS_STIMU_LOCAL_INF  : sfcMsg << "Observe only part of the clauses, focus on inifinte frame" << endl
+			                                       << "             "
+			                                       << "backtrackNum = " << clsStimuNum1
+			                                       << ", matchNum = "   << clsStimuNum2; break;
+			case PDR_CLS_STIMU_LOCAL_ALL  : sfcMsg << "Observe only part of the clauses, focus on all frames" << endl
+			                                       << "             "
+			                                       << "backtrackNum = " << clsStimuNum1
+			                                       << ", matchNum = "   << clsStimuNum2; break;
+			case PDR_CLS_STIMU_LOCAL_GOLD : sfcMsg << "Observe only part of the clauses, use golden parameter" << endl
+			                                       << "             "
+			                                       << "(backtrackNum ,matchNum) = (10, 2) for non-inf and (20, 1) for inf"; break;
+			case PDR_CLS_STIMU_LOCAL_MIX  : sfcMsg << "Observe only part of the clauses, focus on mixed frames" << endl
+			                                       << "             "
+			                                       << "backtrackNum = " << clsStimuNum1
+			                                       << ", matchNum = "   << clsStimuNum2; break;
+			case PDR_CLS_STIMU_HALF       : sfcMsg << "Observe neighboring region of each clause, focus on infinite frame" << endl
+			                                       << "             "
+			                                       << "observeNum = "   << clsStimuNum1
+			                                       << ", matchNum = "   << clsStimuNum2; break;
+			case PDR_CLS_STIMU_NONE       : assert(false);
 		}
 		sfcMsg << ", satLimit = "; if(clsStimuNum3 == 0) sfcMsg << "Infinity"; else sfcMsg << clsStimuNum3; sfcMsg << endl;
 		sfcMsg << "             ";
@@ -696,13 +699,14 @@ PdrChecker::getClsStimulator(PdrClsStimuType clsStimuT, PdrShareType shareT, boo
 {
 	switch(clsStimuT)
 	{
-		case PDR_CLS_STIMU_LOCAL_INF : return (new PdrClsStimulatorLocalInfAll(this, shareT, statON, stimuNum1, stimuNum2, stimuNum3, true));
-		case PDR_CLS_STIMU_LOCAL_ALL : return (new PdrClsStimulatorLocalInfAll(this, shareT, statON, stimuNum1, stimuNum2, stimuNum3, false));
-		case PDR_CLS_STIMU_LOCAL_MIX : return (new PdrClsStimulatorLocalMix   (this, shareT, statON, stimuNum1, stimuNum2, stimuNum3));
-		case PDR_CLS_STIMU_HALF      : return (new PdrClsStimulatorHalf       (this, shareT, statON, stimuNum1, stimuNum2, stimuNum3));
+		case PDR_CLS_STIMU_LOCAL_INF  : return (new PdrClsStimulatorLocalInfAll(this, shareT, statON, stimuNum1, stimuNum2, stimuNum3, true));
+		case PDR_CLS_STIMU_LOCAL_ALL  : return (new PdrClsStimulatorLocalInfAll(this, shareT, statON, stimuNum1, stimuNum2, stimuNum3, false));
+		case PDR_CLS_STIMU_LOCAL_GOLD : return (new PdrClsStimulatorLocalInfAll(this, shareT, statON, stimuNum3));
+		case PDR_CLS_STIMU_LOCAL_MIX  : return (new PdrClsStimulatorLocalMix   (this, shareT, statON, stimuNum1, stimuNum2, stimuNum3));
+		case PDR_CLS_STIMU_HALF       : return (new PdrClsStimulatorHalf       (this, shareT, statON, stimuNum1, stimuNum2, stimuNum3));
 
-		default                      : assert(false);
-		case PDR_CLS_STIMU_NONE      : return 0;
+		default                       : assert(false);
+		case PDR_CLS_STIMU_NONE       : return 0;
 	}
 }
 
@@ -1782,13 +1786,41 @@ PdrChecker::terSimBackwardInternal(const vector<AigGateID>&)const
 }
 
 void
-PdrChecker::satGenBySAT(const vector<AigGateID>& target)const
+PdrChecker::satGenBySAT(const vector<AigGateLit>& target)const
 {
-	// TODO
 	const Var act = solver->newVar();
+	litList.emplace_back(act, true);
+	for(AigGateLit lit: target)
+		litList.emplace_back(solver->getVarInt(getGateID(lit), 1), !isInv(lit));
+	solver->addClause(litList);
+	litList.clear();
+//	terSimSup.markDfsCone(target);
+	unsigned numPI = 0;
+	for(size_t i = 0, I = ntk->getInputNum(); i < I; ++i)
+		if(ntk->getInputNorm(i)->isGlobalRef())
+			numPI += 1;
+	Array<AigGateLit> piValue(numPI);
+	for(size_t i = 0, idx = 0, I = ntk->getInputNum(); i < I; ++i)
+		if(ntk->getInputNorm(i)->isGlobalRef())
+			piValue[idx++] = makeToLit(ntk->getInputID(i), !solver->getValueBool(ntk->getInputID(i), 0));
 
 	solver->clearAssump();
 	solver->addAssump(act, false);
+	for(unsigned i = 0; i < numPI; ++i)
+		solver->assAssump(piValue[i], 0);
+	for(AigGateLit lit: genCube)
+		solver->addAssump(lit, 0);
+	bool result = satSolve();
+	assert(!result);
+	if(result)
+		{ cerr << "[Error] The previous terSim is wrong!" << endl; return; }
+	size_t s = 0, n = genCube.size();
+	for(size_t i = 0; i < n; ++i)
+		if(solver->inConflict(getGateID(genCube[i])))
+			genCube[s++] = genCube[i];
+	// TODO
+
+	disableActVar(act);
 }
 
 void
@@ -1832,8 +1864,7 @@ void
 PdrChecker::addState(const PdrCube& c, size_t level)const
 {
 	for(unsigned i = 0; i < c.getSize(); ++i)
-		solver->addAssump(solver->getVarInt(getGateID(c.getLit(i)), level),
-		                  isInv(c.getLit(i)));
+		solver->addAssump(c.getLit(i), level);
 }
 
 void
@@ -1971,8 +2002,7 @@ PdrChecker::addNextState(const vector<AigGateLit>& cubeVec, size_t ignoreIdx)con
 {
 	for(size_t i = 0, n = cubeVec.size(); i < n; ++i)
 		if(i != ignoreIdx)
-			solver->addAssump(solver->getVarInt(getGateID(cubeVec[i]), 1),
-			                  isInv(cubeVec[i]));
+			solver->addAssump(cubeVec[i], 1);
 }
 
 void
@@ -2357,7 +2387,7 @@ PdrChecker::checkAndPrintIndInv()
 			checkSolver->clearAssump();
 			checkSolver->addAssump(~initAct);
 			for(AigGateLit lit: c)
-				checkSolver->addAssump(getGateID(lit), 0, isInv(lit));
+				checkSolver->addAssump(lit, 0);
 			if(checkSolver->solve())
 				notInit.push_back(c);
 			initP.count();
@@ -2388,7 +2418,7 @@ PdrChecker::checkAndPrintIndInv()
 			checkSolver->addAssump(property, 0, false);
 		else
 			for(AigGateLit lit: targetCube)
-				checkSolver->addAssump(getGateID(lit), 0, isInv(lit));
+				checkSolver->addAssump(lit, 0);
 		cout << (checkSolver->solve() ? "FAIL" : "PASS") << endl;
 
 		Progresser indP("3. Check if the set itself is inductive: ", indInv.size());
@@ -2399,7 +2429,7 @@ PdrChecker::checkAndPrintIndInv()
 			checkSolver->clearAssump();
 			for(AigGateLit lit: c)
 				checkSolver->convertToCNF(getGateID(lit), 1),
-				checkSolver->addAssump(getGateID(lit), 1, isInv(lit));
+				checkSolver->addAssump(lit, 1);
 			if(checkSolver->solve())
 				notInd.push_back(c);
 			indP.count();
@@ -2592,7 +2622,7 @@ PdrChecker::printTrace()const
 			for(size_t i = 0; i < L; ++i)
 				traceSolver->addAssump(ntk->getLatchID(i), 0, curState[i]);
 			for(AigGateLit lit: cexTrace[c])
-				traceSolver->addAssump(getGateID(lit), 1, isInv(lit));
+				traceSolver->addAssump(lit, 1);
 			bool result = traceSolver->solve();
 			assert(result);
 			if(!result)
@@ -2610,7 +2640,7 @@ PdrChecker::printTrace()const
 			traceSolver->addAssump(property, 0, false);
 		else
 			for(AigGateLit lit: targetCube)
-				traceSolver->addAssump(getGateID(lit), 0, isInv(lit));
+				traceSolver->addAssump(lit, 0);
 		bool result = traceSolver->solve();
 		assert(result);
 		if(!result)

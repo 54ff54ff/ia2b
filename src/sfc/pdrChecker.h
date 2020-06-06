@@ -113,6 +113,7 @@ enum PdrClsStimuType
 {
 	PDR_CLS_STIMU_LOCAL_INF,
 	PDR_CLS_STIMU_LOCAL_ALL,
+	PDR_CLS_STIMU_LOCAL_GOLD,
 	PDR_CLS_STIMU_LOCAL_MIX,
 	PDR_CLS_STIMU_HALF,
 	PDR_CLS_STIMU_NONE
@@ -451,7 +452,7 @@ protected:
 	void    terSimForwardEvent    (const vector<AigGateID>&)const;
 	void    terSimBackwardNormal  (const vector<AigGateID>&)const;
 	void    terSimBackwardInternal(const vector<AigGateID>&)const;
-	void satGenBySAT(const vector<AigGateID>&)const;
+	void satGenBySAT(const vector<AigGateLit>&)const;
 	void genSimCand(const vector<AigGateID>&)const;
 	void sortGenCubeByAct()const;
 
@@ -656,6 +657,8 @@ class PdrChecker::PdrClsStimulatorLocal : public PdrClsStimulator
 public:
 	PdrClsStimulatorLocal(PdrChecker* c, PdrShareType shareT, bool statON, size_t bn, size_t mn, size_t sl)
 	: PdrClsStimulator(c, shareT, sl, statON), backtrackNum(bn), matchNum(mn) { assert(bn >= mn && mn > 0); }
+	PdrClsStimulatorLocal(PdrChecker* c, PdrShareType shareT, bool statON, size_t sl)
+	: PdrClsStimulator(c, shareT, sl, statON) {}
 
 protected:
 	size_t  backtrackNum;
@@ -666,13 +669,16 @@ class PdrChecker::PdrClsStimulatorLocalInfAll : public PdrClsStimulatorLocal
 {
 public:
 	PdrClsStimulatorLocalInfAll(PdrChecker* c, PdrShareType shareT, bool statON, size_t bn, size_t mn, size_t sl, bool onlyI)
-	: PdrClsStimulatorLocal(c, shareT, statON, bn, mn, sl), onlyInf(onlyI) {}
+	: PdrClsStimulatorLocal(c, shareT, statON, bn, mn, sl), onlyInf(onlyI), golden(false) {}
+	PdrClsStimulatorLocalInfAll(PdrChecker* c, PdrShareType shareT, bool statON, size_t sl)
+	: PdrClsStimulatorLocal(c, shareT, statON, sl), onlyInf(false), golden(true) {}
 
 	void stimulateWithOneCube(const PdrTCube&);
 	void stimulateAtEndOfFrame() {}
 
 protected:
 	bool  onlyInf;
+	bool  golden;
 };
 
 class PdrChecker::PdrClsStimulatorLocalMix : public PdrClsStimulatorLocal

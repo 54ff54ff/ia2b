@@ -347,14 +347,14 @@ void
 PbcChecker::addStateBlock(size_t f)const
 {
 	for(AigGateLit lit: genCube)
-		blockSolver->addAssump(getGateID(lit), f, isInv(lit));
+		blockSolver->addAssump(lit, f);
 }
 
 void
 PbcChecker::addNextStateInduc(PbcCube* c)const
 {
 	for(AigGateLit lit: *c)
-		inducSolver->addAssump(getGateID(lit), 1, isInv(lit));
+		inducSolver->addAssump(lit, 1);
 }
 
 void
@@ -595,7 +595,7 @@ void
 PbcUChecker::addStateFixed(PbcCube* c)const
 {
 	for(AigGateLit lit: *c)
-		fixedSolver->addAssump(getGateID(lit), 0, isInv(lit));
+		fixedSolver->addAssump(lit, 0);
 }
 
 /**************************************/
@@ -926,14 +926,14 @@ void
 PbcIChecker::addStateBlock(size_t f)const
 {
 	for(AigGateLit lit: genCube)
-		blkIndSolver->addAssump(getGateID(lit), f, isInv(lit));
+		blkIndSolver->addAssump(lit, f);
 }
 
 void
 PbcIChecker::addNextStateInduc(PbcCube* c)const
 {
 	for(AigGateLit lit: *c)
-		blkIndSolver->addAssump(getGateID(lit), 1, isInv(lit));
+		blkIndSolver->addAssump(lit, 1);
 }
 
 void

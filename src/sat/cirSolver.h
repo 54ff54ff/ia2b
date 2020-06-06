@@ -92,7 +92,7 @@ public:
 	virtual Var newVar() = 0;
 
 	Var  getVar     (AigGateID id, size_t level)const { return level >= idLvlToVar[id].size() ? var_Undef : getVarInt(id, level); }
-	Var  getVarInt  (AigGateID id, size_t level)const { return idLvlToVar[id][level]; }
+	Var  getVarInt  (AigGateID id, size_t level)const { assert(level < idLvlToVar[id].size()); return idLvlToVar[id][level]; }
 	bool isConverted(AigGateID id, size_t level)const { return getVar(id, level) != var_Undef; }
 	void setVar     (AigGateID id, size_t level)
 	{
@@ -139,6 +139,8 @@ public:
 
 	void addAssump(Var v, bool inv) { assert(isVarValid(v)); addAssump(Lit(v, inv)); }
 	void addAssump(AigGateID id, size_t level, bool inv) { assert(isConverted(id, level)); addAssump(getVarInt(id, level), inv); }
+	void addAssump(AigGateLit lit, size_t level) { addAssump(getGateID(lit), level, isInv(lit)); }
+	void addAssump(AigGateV gateV, size_t level) { addAssump(gateV.getGateID(), level, gateV.isInv()); }
 
 protected:
 	AigNtk*       ntk;

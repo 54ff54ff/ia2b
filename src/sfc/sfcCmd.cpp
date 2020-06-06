@@ -27,7 +27,7 @@ CmdClass(ItpCheck, CMD_TYPE_VERIFICATION, 5, "-TRace",   3,
                                              "-All",     2,
                                              "-Last",    2,
                                              "-TImeout", 3);
-CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 36, "-TRace",     3,
+CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 37, "-TRace",     3,
                                               "-Max",       2,
                                               "-EVent",     3,
                                               "-Backward",  2,
@@ -62,7 +62,8 @@ CmdClass(PdrCheck, CMD_TYPE_VERIFICATION, 36, "-TRace",     3,
                                               "-SHAREAll",  7,
                                               "-LAzy",      3,
                                               "-OBLAll",    5,
-                                              "-OBLDepth",  5);
+                                              "-OBLDepth",  5,
+                                              "-LOCALGold", 7);
 CmdClass(PbcCheck, CMD_TYPE_VERIFICATION, 9, "-TRace",     3,
                                              "-Max",       2,
                                              "-Stat",      2,
@@ -356,6 +357,7 @@ ItpCheckCmd::getHelpStr()const
 	                 [-STat ("atsgprcx")] [-Verbose ("aogpbtcimfx")]
 	                 [<<-LOCALInf | -LOCALAll | -LOCALMix> (unsigned backtrackNum matchNum) |
 	                    -HALF                              (unsigned observeNum matchNum)   |
+	                    -LOCALGold                                                          |
 	                   <-OBLAll | -OBLDepth>               (unsigned oblThreshold)>
 	                  (unsigned satLimit) [-SHAREInf | -SHAREAll]]
                      [-CHeck]
@@ -396,6 +398,7 @@ ItpCheckCmd::getHelpStr()const
 	33: -LAzy,      3
 	34: -OBLAll,    5
 	35: -OBLDepth,  5
+	36: -LOCALGold, 7
 ========================================================================*/
 
 CmdExecStatus
@@ -775,7 +778,7 @@ PdrCheckCmd::exec(char* options)const
 			customSatLimit = true;
 		}
 		else if(optMatch<30>(tokens[i]))
-		{cout << "Hehe" << endl;
+		{
 			if(pcsht != PDR_SHARE_NONE ||
 			   posht != PDR_SHARE_NONE)
 				return errorOption(CMD_OPT_EXTRA, tokens[i]);
@@ -862,6 +865,17 @@ PdrCheckCmd::exec(char* options)const
 				{ cerr << "[Error] oblThreshold cannot be 0!" << endl; return CMD_EXEC_ERROR_EXT; }
 			postt = PDR_OBL_STIMU_DEPTH;
 		}
+		else if(optMatch<36>(tokens[i]))
+		{
+			if(pcstt != PDR_CLS_STIMU_NONE ||
+			   postt != PDR_OBL_STIMU_NONE)
+				return errorOption(CMD_OPT_EXTRA, tokens[i]);
+			if(++i == n)
+				return errorOption(CMD_OPT_MISSING);
+			if(!myStrToUInt(tokens[i], clsStimuNum3))
+				return errorOption(CMD_OPT_INVALID_UINT, tokens[i]);
+			pcstt = PDR_CLS_STIMU_LOCAL_GOLD;
+		}
 		else return errorOption(CMD_OPT_ILLEGAL, tokens[i]);
 	if(!checkNtk()) return CMD_EXEC_ERROR_INT;
 	SafetyChecker* checker = getChecker<PdrChecker>(aigNtk, outputIdx, trace, timeout, maxFrame, recycleNum, stats,
@@ -892,6 +906,7 @@ PdrCheckCmd::getUsageStr()const
 	       "[-STat (\"atsgprcx\")] [-Verbose (\"aogpbtcimfx\")]\n"
 	       "[<<-LOCALInf | -LOCALAll | -LOCALMix> (unsigned backtrackNum matchNum) |\n"
 	       "   -HALF                              (unsigned observeNum matchNum)   |\n"
+	       "   -LOCALGold                                                          |\n"
 	       "  <-OBLAll | -OBLDepth>               (unsigned oblThreshold)>\n"
 	       " (unsigned satLimit) [-SHAREInf | -SHAREAll]]\n"
 	       "[-CHeck]\n";
