@@ -253,7 +253,7 @@ public:
 
     badDepth    prevCube   hashValue   markA   markB    refCount    litNum | (... literals ...)
  |<-   4   ->|<-   8   ->|<-   8   ->|<- 1 ->|<- 1 ->|<-   2   ->|<-  4  ->|<-   4 * litNum   ->|
-                                                            pointer
+                                                                        pointer
 */
 
 class PdrCube;

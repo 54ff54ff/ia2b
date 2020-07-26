@@ -891,7 +891,7 @@ PdrCheckCmd::exec(char* options)const
 const char*
 PdrCheckCmd::getUsageStr()const
 {
-	return "<(unsigned outputIdx)> [-Trace]\n"
+	return "<(unsigned outputIdx)> [-TRace]\n"
 	       "[-TImeout (unsigned timeout)]\n"
            "[-Max (unsigned maxFrame)]\n"
 	       "[-SATLimit (unsigned satLimit)]\n"

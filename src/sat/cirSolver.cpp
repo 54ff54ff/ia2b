@@ -5,6 +5,8 @@
 <------------------------------------------------------------------------*/
 
 #include "cirSolver.h"
+#include "aigMisc2.h"
+#include "satData.h"
 
 namespace _54ff
 {
@@ -156,6 +158,12 @@ CirSolver::convertOr(Var f, bool invF, const vector<Lit>& litList)
 	tmp.push_back(Lit(f, true ^ invF));
 	addClause(tmp);
 	tmp.pop_back();
+}
+
+void
+CirSolver::techMapToCNF()
+{
+	AigCutter fourCut(ntk, 4, 10);
 }
 
 void

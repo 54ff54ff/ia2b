@@ -216,7 +216,6 @@ PdrCube::PdrCube(const vector<AigGateLit>& litList, bool toSort, const PdrCube* 
 		assert(getLit(i-1) < getLit(i));
 	incCount();
 	initMark();
-	assert(!keepPrev || prevCube != 0);
 	setPrevCube(keepPrev ? prevCube : 0);
 	setBadDepth(prevCube == 0 ? 0 : prevCube->getBadDepth() + 1);
 }
@@ -562,7 +561,7 @@ PdrChecker::PdrChecker(AigNtk* ntkToCheck, size_t outputIdx, bool _trace, size_t
 			                                       << ", matchNum = "   << clsStimuNum2; break;
 			case PDR_CLS_STIMU_LOCAL_GOLD : sfcMsg << "Observe only part of the clauses, use golden parameter" << endl
 			                                       << "             "
-			                                       << "(backtrackNum ,matchNum) = (10, 2) for non-inf and (20, 1) for inf"; break;
+			                                       << "(backtrackNum, matchNum) = (10, 2) for non-inf and (20, 1) for inf"; break;
 			case PDR_CLS_STIMU_LOCAL_MIX  : sfcMsg << "Observe only part of the clauses, focus on mixed frames" << endl
 			                                       << "             "
 			                                       << "backtrackNum = " << clsStimuNum1
@@ -1807,7 +1806,7 @@ PdrChecker::satGenBySAT(const vector<AigGateLit>& target)const
 	solver->clearAssump();
 	solver->addAssump(act, false);
 	for(unsigned i = 0; i < numPI; ++i)
-		solver->assAssump(piValue[i], 0);
+		solver->addAssump(piValue[i], 0);
 	for(AigGateLit lit: genCube)
 		solver->addAssump(lit, 0);
 	bool result = satSolve();
@@ -1893,7 +1892,7 @@ PdrChecker::unsatGen(const PdrCube& c)const
 					genCube.push_back(c.getLit(i));
 			if(isInitial(genCube))
 			{
-				for(unsigned i = c.getSize() - 1; i != unsigned(-1); --i)
+				for(unsigned i = c.getSize() - 1; i != MAX_UNSIGNED; --i)
 					if(!isInv(c.getLit(i)))
 					{
 						size_t j = genCube.size();
@@ -1918,7 +1917,7 @@ PdrChecker::unsatGen(const PdrCube& c)const
 					genCube.push_back(c.getLit(i));
 			if(isInitial(genCube))
 			{
-				for(unsigned i = c.getSize() - 1; i != unsigned(-1); --i)
+				for(unsigned i = c.getSize() - 1; i != MAX_UNSIGNED; --i)
 					if(diffPolar(c.getLit(i)))
 					{
 						size_t j = genCube.size();

@@ -87,6 +87,8 @@ public:
 	virtual void addClause(const vector<Lit>&) = 0;
 	virtual void addConflict()                 = 0;
 
+	void techMapToCNF();
+
 	/*====================================*/
 
 	virtual Var newVar() = 0;

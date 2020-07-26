@@ -401,7 +401,7 @@ AigSimulator::doConstProp(const vector<AigGateID>& target)
 		if(AigGate* g = ntk->getGate(id);
 		   g->isGlobalRef(1))
 			g->setToGlobalRef();
-	for(size_t i = s - 1; i != size_t(-1); --i)
+	for(size_t i = s - 1; i != MAX_SIZE_T; --i)
 	{
 		if(dfsList[i]->isGlobalRef())
 			continue;

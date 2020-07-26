@@ -124,6 +124,8 @@ private:
 	bool      active;
 };
 
+/*====================================*/
+
 class RepeatChar
 {
 friend ostream& operator<<(ostream&, const RepeatChar&);
@@ -162,6 +164,38 @@ friend ostream& operator<<(ostream& os, const CleanIntOnTerminal& ci)
 
 public:
 	CleanIntOnTerminal(UIntType n): num(n) {}
+
+private:
+	UIntType  num;
+};
+
+template<class UIntType>
+class PrintHex
+{
+static_assert(is_unsigned_v<UIntType> && is_integral_v<UIntType>);
+
+friend ostream& operator<<(ostream& os, const PrintHex& ph)
+{
+	const char* hexSymbol = "0123456789ABCDEF";
+	constexpr UIntType hexMask = 0xF;
+
+	os << "0x";
+	bool ignoreForZero = true;
+	for(size_t shiftNum = sizeof(UIntType) * 8 - 4; shiftNum != size_t(-4); shiftNum -= 4)
+	{
+		UIntType token = (ph.num & (hexMask << shiftNum)) >> shiftNum;
+		if(token == 0)
+			{if(ignoreForZero) continue; }
+		else ignoreForZero = false;
+		os << hexSymbol[token];
+	}
+	if(ignoreForZero)
+		os << '0';
+	return os;
+}
+
+public:
+	PrintHex(UIntType n): num(n) {}
 
 private:
 	UIntType  num;

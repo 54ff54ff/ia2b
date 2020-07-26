@@ -115,7 +115,8 @@ bool isValidVarName(const char*);
 
 /*====================================*/
 
-constexpr size_t MAX_SIZE_T = numeric_limits<size_t>::max();
+constexpr size_t MAX_SIZE_T   = numeric_limits<size_t>  ::max();
+constexpr size_t MAX_UNSIGNED = numeric_limits<unsigned>::max();
 
 template<class IntType>
 bool myStrToInt(const char* str, IntType& num)
@@ -172,6 +173,16 @@ bool myStrToUInt(const char* str, UIntType& num)
 	if(overflow) cerr << "[Warning] Overflow detected, the resulting number is " << num << "!" << endl;
 	return true;
 }
+
+/*====================================*/
+
+enum TwoBoolBranch
+{
+	NONE   = 0b00,
+	ONLY_0 = 0b01,
+	ONLY_1 = 0b10,
+	BOTH   = 0b11
+};
 
 /*================== listFile.cpp ==================*/
 
